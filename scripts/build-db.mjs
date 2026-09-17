@@ -23,6 +23,7 @@ import {
   SCHEMA,
   versionFromBuiltAt,
 } from './lib/schema.mjs';
+import { leerNutrientes } from './lib/nutrients.mjs';
 import { createReadStream, mkdirSync, readFileSync, statSync, existsSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createGunzip } from 'node:zlib';
 import { createInterface } from 'node:readline';
@@ -49,6 +50,47 @@ const COUNTRIES = (args.countries ?? 'spain,mexico,colombia,venezuela,argentina,
   .filter(Boolean);
 const PER_COUNTRY = Number(args.limit ?? 300);
 
+/**
+ * Recuento de que peldano de la escalera resolvio cada nutriente. Sirve para
+ * medir la cobertura real en vez de suponerla: si un peldano no aporta nada,
+ * sobra; si aporta mucho, hay que cuidarlo.
+ */
+const ORIGENES = {
+  por_origen: new Map(),
+  con_energia: 0,
+  sin_energia: 0,
+  declarado_sin_datos: 0,
+  imposibles: 0,
+  productos_con_imposibles: 0,
+  anotar(origenes, sinDatos, imposibles = []) {
+    if (imposibles.length) {
+      this.productos_con_imposibles += 1;
+      this.imposibles += imposibles.length;
+    }
+    for (const o of Object.values(origenes)) {
+      this.por_origen.set(o, (this.por_origen.get(o) ?? 0) + 1);
+    }
+    if (origenes.energy_kj) this.con_energia += 1;
+    else this.sin_energia += 1;
+    if (sinDatos) this.declarado_sin_datos += 1;
+  },
+  resumen() {
+    const total = this.con_energia + this.sin_energia;
+    if (!total) return '';
+    const pct = (x) => `${((x / total) * 100).toFixed(1)}%`;
+    const filas = [...this.por_origen.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([o, n]) => `      ${o.padEnd(20)} ${String(n).padStart(9)}`)
+      .join('\n');
+    return (
+      `  nutrientes: ${this.con_energia}/${total} con energia (${pct(this.con_energia)})` +
+      `, ${this.declarado_sin_datos} declaran no_nutrition_data\n` +
+      `    valores imposibles conservados: ${this.imposibles} en ${this.productos_con_imposibles} productos\n` +
+      `    resueltos por peldano:\n${filas}`
+    );
+  },
+};
+
 const num = (v) => {
   if (v === undefined || v === null || v === '') return null;
   const n = Number(v);
@@ -58,11 +100,12 @@ const list = (v) => (Array.isArray(v) && v.length ? v.join(',') : null);
 const truthy = (v) => (v === 1 || v === '1' || v === true ? 1 : 0);
 
 function mapProduct(p) {
-  const n = p.nutriments ?? {};
   const nd = p.nutriscore_data ?? {};
-  const energyKj = num(n['energy-kj_100g']) ?? num(n['energy_100g']);
-  const salt = num(n['salt_100g']);
-  const sodiumG = num(n['sodium_100g']);
+  // Los `_100g` son campos CALCULADOS y en el volcado faltan a menudo; la
+  // escalera de lib/nutrients.mjs cae a los campos de origen. Ver alli el
+  // porque, citando el esquema oficial.
+  const { valores, origenes, sinDatos, imposibles } = leerNutrientes(p);
+  ORIGENES.anotar(origenes, sinDatos, imposibles);
   const name = p.product_name_es || p.product_name || p.generic_name || null;
   if (!p.code || !name) return null; // sin nombre el registro no sirve al usuario
 
@@ -78,25 +121,36 @@ function mapProduct(p) {
     nova_group: num(p.nova_group),
     nutriscore_grade: nd.grade ?? p.nutriscore_grade ?? null,
     nutriscore_score: num(nd.score),
-    energy_kj: energyKj,
-    energy_kcal: num(n['energy-kcal_100g']) ?? (energyKj !== null ? energyKj / 4.184 : null),
-    fat: num(n['fat_100g']),
-    saturated_fat: num(n['saturated-fat_100g']),
-    trans_fat: num(n['trans-fat_100g']),
-    carbohydrates: num(n['carbohydrates_100g']),
-    sugars: num(n['sugars_100g']),
-    fiber: num(n['fiber_100g']),
-    proteins: num(n['proteins_100g']),
-    salt: salt ?? (sodiumG !== null ? sodiumG * 2.5 : null),
-    sodium: sodiumG !== null ? sodiumG * 1000 : salt !== null ? (salt / 2.5) * 1000 : null,
-    fvl:
-      num(n['fruits-vegetables-legumes-estimate-from-ingredients_100g']) ??
-      num(n['fruits-vegetables-nuts_100g']),
+    energy_kj: valores.energy_kj,
+    energy_kcal: valores.energy_kcal,
+    fat: valores.fat,
+    saturated_fat: valores.saturated_fat,
+    trans_fat: valores.trans_fat,
+    carbohydrates: valores.carbohydrates,
+    sugars: valores.sugars,
+    fiber: valores.fiber,
+    proteins: valores.proteins,
+    salt: valores.salt,
+    // la columna `sodium` va en mg; la escalera devuelve gramos
+    sodium: valores.sodium === null ? null : valores.sodium * 1000,
+    fvl: valores.fvl,
     is_beverage: truthy(nd.is_beverage),
     is_water: truthy(nd.is_water),
     is_cheese: truthy(nd.is_cheese),
     is_fat_oil_nuts_seeds: truthy(nd.is_fat_oil_nuts_seeds),
     is_red_meat: truthy(nd.is_red_meat_product),
+    // JSON compacto, y null cuando no hay nada: es la inmensa mayoria de filas.
+    implausible: imposibles.length
+      ? JSON.stringify(
+          imposibles.map((x) => ({
+            n: x.nutriente,
+            v: Number(x.valor.toFixed(2)),
+            u: x.unidad,
+            m: x.motivo === 'racion-incoherente' ? 'racion' : 'max',
+            ...(x.sustituido ? { s: x.sustituido } : {}),
+          })),
+        )
+      : null,
     last_modified: p.last_modified_t ? p.last_modified_t * 1000 : null,
     popularity: num(p.popularity_key) ?? 0,
   };
@@ -107,6 +161,9 @@ const API_FIELDS = [
   'image_front_small_url','image_front_url','ingredients_text','ingredients_text_es',
   'additives_tags','allergens_tags','categories_tags','countries_tags',
   'nutriments','nutriscore_data','nutriscore_grade','nova_group','last_modified_t','popularity_key',
+  // Campos de ORIGEN de los nutrientes. Sin ellos no se pueden leer los
+  // productos cuyos `_100g` -que son calculados- no vienen en la respuesta.
+  'nutrition_data_per','serving_quantity','no_nutrition_data',
 ].join(',');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -534,6 +591,7 @@ async function main() {
     }
     flushAll();
     console.log(`\r  leidos ${seen.toLocaleString('es')}, guardados ${kept.toLocaleString('es')}          `);
+    console.log(ORIGENES.resumen());
   } else {
     console.log(`Recolectando desde la API para: ${COUNTRIES.join(', ')}`);
     const collected = await collectFromApi();

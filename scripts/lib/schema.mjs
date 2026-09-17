@@ -50,6 +50,11 @@ CREATE TABLE products (
   is_fat_oil_nuts_seeds INTEGER,
   is_red_meat       INTEGER,
   last_modified     INTEGER,
+  -- Nutrientes que Open Food Facts tiene registrados con un valor
+  -- fisicamente imposible. No se descartan: se guardan para poder decirlo en
+  -- la ficha, en vez de presentar un hueco como si el dato no existiera. JSON
+  -- compacto: [{"n":"energy_kj","v":19200,"m":"max","s":"nutriscore"}].
+  implausible       TEXT,
   -- Metrica de escaneos de Open Food Facts. Sirve para dos cosas: acotar los
   -- paises grandes a los productos que la gente escanea de verdad, y ordenar
   -- los resultados de busqueda por relevancia real en vez de alfabeticamente.
@@ -87,7 +92,7 @@ export const COLUMNS = [
   'nova_group','nutriscore_grade','nutriscore_score','energy_kj',
   'energy_kcal','fat','saturated_fat','trans_fat','carbohydrates','sugars','fiber','proteins',
   'salt','sodium','fvl','is_beverage','is_water','is_cheese','is_fat_oil_nuts_seeds','is_red_meat',
-  'last_modified','popularity',
+  'last_modified','popularity','implausible',
 ];
 
 /** Columnas que alimentan el indice de texto. Solo si cambian se toca el FTS. */
