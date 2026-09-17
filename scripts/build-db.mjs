@@ -82,7 +82,11 @@ CREATE TABLE products (
   is_cheese         INTEGER,
   is_fat_oil_nuts_seeds INTEGER,
   is_red_meat       INTEGER,
-  last_modified     INTEGER
+  last_modified     INTEGER,
+  -- Metrica de escaneos de Open Food Facts. Sirve para dos cosas: acotar los
+  -- paises grandes a los productos que la gente escanea de verdad, y ordenar
+  -- los resultados de busqueda por relevancia real en vez de alfabeticamente.
+  popularity        INTEGER
 ) WITHOUT ROWID;
 
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
@@ -150,6 +154,7 @@ function mapProduct(p) {
     is_fat_oil_nuts_seeds: truthy(nd.is_fat_oil_nuts_seeds),
     is_red_meat: truthy(nd.is_red_meat_product),
     last_modified: p.last_modified_t ? p.last_modified_t * 1000 : null,
+    popularity: num(p.popularity_key) ?? 0,
   };
 }
 
@@ -168,14 +173,14 @@ const COLUMNS = [
   'nova_group','nutriscore_grade','nutriscore_score','energy_kj',
   'energy_kcal','fat','saturated_fat','trans_fat','carbohydrates','sugars','fiber','proteins',
   'salt','sodium','fvl','is_beverage','is_water','is_cheese','is_fat_oil_nuts_seeds','is_red_meat',
-  'last_modified',
+  'last_modified','popularity',
 ];
 
 const API_FIELDS = [
   'code','product_name','product_name_es','generic_name','brands','quantity',
   'image_front_small_url','image_front_url','ingredients_text','ingredients_text_es',
   'additives_tags','allergens_tags','categories_tags','countries_tags',
-  'nutriments','nutriscore_data','nutriscore_grade','nova_group','last_modified_t',
+  'nutriments','nutriscore_data','nutriscore_grade','nova_group','last_modified_t','popularity_key',
 ].join(',');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -326,7 +331,34 @@ function createDb(path) {
   };
 }
 
-function finalizeDb(target) {
+function finalizeDb(target, maxProducts) {
+  /**
+   * Recorte por popularidad.
+   *
+   * Paises como Estados Unidos tienen ~970.000 productos en Open Food Facts,
+   * que a 250 B cada uno son 231 MB: por encima del limite de 100 MB por
+   * archivo de GitHub. En lugar de partir el archivo (lo que romperia la
+   * consulta por rangos, que necesita una sola base), se conservan los mas
+   * escaneados.
+   *
+   * El recorte se hace en SQL y no en memoria a proposito: cargar un millon de
+   * objetos en Node para ordenarlos consumiria varios GB en un runner que solo
+   * tiene 7.
+   */
+  if (maxProducts) {
+    const before = target.db.prepare('SELECT COUNT(*) AS n FROM products').get().n;
+    if (before > maxProducts) {
+      target.db.exec(`
+        DELETE FROM products WHERE barcode NOT IN (
+          SELECT barcode FROM products ORDER BY popularity DESC, barcode ASC LIMIT ${maxProducts}
+        );
+        DELETE FROM products_fts WHERE barcode NOT IN (SELECT barcode FROM products);
+      `);
+      const after = target.db.prepare('SELECT COUNT(*) AS n FROM products').get().n;
+      console.log(`  ${target.country ?? 'snapshot'}: recortado de ${before.toLocaleString('es')} a ${after.toLocaleString('es')} por popularidad`);
+    }
+  }
+
   const meta = target.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)');
   meta.run('built_at', new Date().toISOString());
   meta.run('source', 'Open Food Facts (ODbL)');
@@ -448,7 +480,14 @@ async function main() {
     flushAll();
   }
 
-  const results = [...targets.values()].map(finalizeDb);
+  // Tope por pais. Sin tope para los pequenos; los grandes se recortan para
+  // caber en el limite de 100 MB por archivo de GitHub.
+  const caps = {};
+  for (const pair of String(args['max-per-country'] ?? 'united-states:300000').split(',')) {
+    const [country, n] = pair.split(':');
+    if (country && n) caps[country.trim()] = Number(n);
+  }
+  const results = [...targets.values()].map((t) => finalizeDb(t, caps[t.country ?? '']));
 
   /**
    * Indice publicado junto a las bases.

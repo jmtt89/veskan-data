@@ -27,7 +27,7 @@ on:
     inputs:
       countries:
         description: 'Paises separados por comas'
-        default: 'spain,mexico,colombia,venezuela,argentina,chile,peru'
+        default: 'spain,mexico,colombia,venezuela,argentina,chile,peru,united-states'
       mode:
         description: 'dump (completo, 12 GB en streaming) o api (rapido, parcial)'
         default: 'dump'
@@ -57,7 +57,10 @@ jobs:
       - name: Construir los snapshots
         env:
           MODE: ${{ inputs.mode || 'dump' }}
-          COUNTRIES: ${{ inputs.countries || 'spain,mexico,colombia,venezuela,argentina,chile,peru' }}
+          # Estados Unidos entra porque en Latinoamerica los importados
+          # estadounidenses son habituales: medido, el 19,3% del catalogo
+          # mexicano y el 13,8% del venezolano llevan prefijo GS1 de EE.UU.
+          COUNTRIES: ${{ inputs.countries || 'spain,mexico,colombia,venezuela,argentina,chile,peru,united-states' }}
         run: |
           set -o pipefail
           mkdir -p out
@@ -65,10 +68,17 @@ jobs:
             # El volcado JSONL pesa 12 GB comprimidos y el runner solo tiene
             # ~14 GB libres: guardarlo en disco dejaria la maquina al limite.
             # Se transmite directamente al parser, sin almacenar nada.
+            # --max-per-country acota los catalogos grandes a los productos
+            # mas escaneados. Estados Unidos tiene ~970.000 productos en Open
+            # Food Facts, que a 250 B serian 231 MB: por encima del limite de
+            # 100 MB por archivo de GitHub. Se conservan los 300.000 mas
+            # populares (~75 MB), que es donde esta practicamente todo lo que
+            # alguien escanea de verdad.
             curl -fsSL --retry 3 --retry-delay 30 \
               https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz \
               | node scripts/build-db.mjs --mode=dump --stdin \
-                  --countries="$COUNTRIES" --split --out-dir=out
+                  --countries="$COUNTRIES" --split --out-dir=out \
+                  --max-per-country=united-states:300000,spain:380000
           else
             node scripts/build-db.mjs --mode=api \
               --countries="$COUNTRIES" --split --out-dir=out
@@ -84,6 +94,12 @@ jobs:
             echo "$(basename "$f"): $size bytes"
             # Si la descarga o el filtrado fallaron, los archivos salen
             # minusculos. Abortar conserva los anteriores, que funcionaban.
+            # Ningun archivo puede superar los 100 MB: git lo rechaza en el push
+            # y el Action fallaria despues de una hora de trabajo.
+            if [ "$size" -gt 104857600 ]; then
+              echo "::error::$(basename "$f") supera los 100 MB ($size B), git lo rechazaria."
+              exit 1
+            fi
             if [ "$size" -lt 20000 ]; then
               echo "::error::$(basename "$f") sospechosamente pequeno ($size B)."
               exit 1
