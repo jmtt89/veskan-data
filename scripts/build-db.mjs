@@ -16,6 +16,13 @@
  */
 
 import Database from 'better-sqlite3';
+import {
+  COLUMNS,
+  FTS_SCHEMA,
+  PAGE_SIZE,
+  SCHEMA,
+  versionFromBuiltAt,
+} from './lib/schema.mjs';
 import { createReadStream, mkdirSync, statSync, existsSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createGunzip } from 'node:zlib';
 import { createInterface } from 'node:readline';
@@ -41,69 +48,6 @@ const COUNTRIES = (args.countries ?? 'spain,mexico,colombia,venezuela,argentina,
   .map((s) => s.trim())
   .filter(Boolean);
 const PER_COUNTRY = Number(args.limit ?? 300);
-
-/**
- * `page_size` 4096 no es decorativo: debe coincidir con el `blockSize` del
- * RangeReader para que cada lectura de SQLite sea exactamente una peticion
- * Range de un bloque, sin leer de mas.
- */
-const PAGE_SIZE = 4096;
-
-const SCHEMA = `
-PRAGMA page_size = ${PAGE_SIZE};
-PRAGMA journal_mode = DELETE;
-
-CREATE TABLE products (
-  barcode           TEXT PRIMARY KEY,
-  name              TEXT,
-  brands            TEXT,
-  quantity          TEXT,
-  image_url         TEXT,
-  ingredients_text  TEXT,
-  additives         TEXT,
-  allergens         TEXT,
-  nova_group        INTEGER,
-  nutriscore_grade  TEXT,
-  nutriscore_score  INTEGER,
-  energy_kj         REAL,
-  energy_kcal       REAL,
-  fat               REAL,
-  saturated_fat     REAL,
-  trans_fat         REAL,
-  carbohydrates     REAL,
-  sugars            REAL,
-  fiber             REAL,
-  proteins          REAL,
-  salt              REAL,
-  sodium            REAL,
-  fvl               REAL,
-  is_beverage       INTEGER,
-  is_water          INTEGER,
-  is_cheese         INTEGER,
-  is_fat_oil_nuts_seeds INTEGER,
-  is_red_meat       INTEGER,
-  last_modified     INTEGER,
-  -- Metrica de escaneos de Open Food Facts. Sirve para dos cosas: acotar los
-  -- paises grandes a los productos que la gente escanea de verdad, y ordenar
-  -- los resultados de busqueda por relevancia real en vez de alfabeticamente.
-  popularity        INTEGER
-) WITHOUT ROWID;
-
-CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
-`;
-
-/**
- * El indice FTS va en tabla aparte y NO se crea WITHOUT ROWID: FTS5 necesita
- * rowid. Se enlaza por codigo de barras.
- */
-const FTS_SCHEMA = `
-CREATE VIRTUAL TABLE products_fts USING fts5(
-  barcode UNINDEXED,
-  name,
-  brands,
-  tokenize = 'unicode61 remove_diacritics 2'
-);
-`;
 
 const num = (v) => {
   if (v === undefined || v === null || v === '') return null;
@@ -157,24 +101,6 @@ function mapProduct(p) {
     popularity: num(p.popularity_key) ?? 0,
   };
 }
-
-/**
- * Columnas del snapshot.
- *
- * Se excluyen a proposito `labels_tags`, `countries_tags`, `categories_tags` e
- * `image_front_url`: se comprobo que ni la interfaz ni el motor de puntuacion
- * los leen. Las banderas de categoria que SI necesita Nutri-Score
- * (`is_beverage`, `is_cheese`...) se guardan ya resueltas, asi que la lista de
- * categorias en crudo era puro peso muerto. Se conservan `ingredients_text`
- * (lo usa la inferencia NOVA y la ficha) y `allergens` (se muestran).
- */
-const COLUMNS = [
-  'barcode','name','brands','quantity','image_url','ingredients_text','additives','allergens',
-  'nova_group','nutriscore_grade','nutriscore_score','energy_kj',
-  'energy_kcal','fat','saturated_fat','trans_fat','carbohydrates','sugars','fiber','proteins',
-  'salt','sodium','fvl','is_beverage','is_water','is_cheese','is_fat_oil_nuts_seeds','is_red_meat',
-  'last_modified','popularity',
-];
 
 const API_FIELDS = [
   'code','product_name','product_name_es','generic_name','brands','quantity',
@@ -359,8 +285,29 @@ function finalizeDb(target, maxProducts) {
     }
   }
 
+  /**
+   * Deduplicar el indice de texto.
+   *
+   * `products` deduplica sola porque `barcode` es su clave primaria y se
+   * inserta con INSERT OR REPLACE. `products_fts` no tiene clave: un producto
+   * repetido en el volcado entra dos veces y sale dos veces en las busquedas.
+   * Medido sobre el shard de Espana publicado: 339.576 entradas de indice para
+   * 339.562 productos, 14 duplicados.
+   *
+   * Se conserva el rowid mayor, que es la ultima insercion y por tanto la que
+   * se corresponde con la fila que quedo en `products`.
+   */
+  target.db.exec(`
+    DELETE FROM products_fts
+    WHERE rowid NOT IN (SELECT MAX(rowid) FROM products_fts GROUP BY barcode);
+  `);
+
   const meta = target.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)');
-  meta.run('built_at', new Date().toISOString());
+  const builtAt = new Date().toISOString();
+  meta.run('built_at', builtAt);
+  // Eslabon de la cadena de deltas: el cliente compara SU version con la del
+  // indice para saber si le basta con un delta o tiene que bajarlo todo.
+  meta.run('version', versionFromBuiltAt(builtAt));
   meta.run('source', 'Open Food Facts (ODbL)');
   meta.run('license', 'ODbL-1.0');
   meta.run('page_size', String(PAGE_SIZE));
@@ -370,7 +317,13 @@ function finalizeDb(target, maxProducts) {
   target.db.exec('ANALYZE');
   const n = target.db.prepare('SELECT COUNT(*) AS n FROM products').get().n;
   target.db.close();
-  return { path: target.path, count: n, bytes: statSync(target.path).size, country: target.country };
+  return {
+    path: target.path,
+    count: n,
+    bytes: statSync(target.path).size,
+    country: target.country,
+    version: versionFromBuiltAt(builtAt),
+  };
 }
 
 async function main() {
@@ -509,7 +462,13 @@ async function main() {
           .filter((r) => r.country)
           .map((r) => [
             r.country,
-            { file: `${r.country}.sqlite3`, products: r.count, bytes: r.bytes },
+            {
+              file: `${r.country}.sqlite3`,
+              products: r.count,
+              bytes: r.bytes,
+              version: r.version,
+              deltas: [],
+            },
           ]),
       ),
     };

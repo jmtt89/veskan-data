@@ -13,7 +13,15 @@
 #    historial en cada commit (los binarios no admiten delta): en un ano el
 #    repositorio seria ingobernable.
 #
-# 3. Se sirve desde raw.githubusercontent.com y NO desde GitHub Pages, porque
+# 3. Los deltas diarios se calculan AQUI, comparando el snapshot recien
+#    construido con el publicado la noche anterior. NO se usan los deltas que
+#    publica Open Food Facts en data/delta/: comprobado sobre dos de ellos
+#    separados doce dias, el campo `nutriments` viene vacio en el 100% de los
+#    registros, mientras que en el volcado completo lo trae relleno el 62%.
+#    Aplicarlos borraria energia, azucares, grasas y sal de cada producto
+#    actualizado.
+#
+# 4. Se sirve desde raw.githubusercontent.com y NO desde GitHub Pages, porque
 #    Pages comprime con gzip y aplica los rangos HTTP al flujo comprimido. El
 #    navegador recibia bytes que no eran del archivo y SQLite respondia
 #    SQLITE_CORRUPT. Con curl no se reproducia: curl no pide compresion.
@@ -54,6 +62,24 @@ jobs:
 
       - run: npm install
 
+      - name: Traer la generacion anterior
+        run: |
+          # La rama `data` se reemplaza entera en cada reconstruccion, asi que
+          # la version anterior solo existe en el remoto hasta que la pisemos.
+          # Hace falta para calcular el delta Y para arrastrar el historial de
+          # deltas, que si no desapareceria con el --force.
+          if git fetch --depth=1 origin data 2>/dev/null; then
+            mkdir -p prev
+            # `git archive` y no `git checkout --work-tree`: este ultimo deja el
+            # indice apuntando a la rama `data`, y el commit posterior saldria
+            # con lo que no toca.
+            git archive FETCH_HEAD | tar -x -C prev
+            echo "Generacion anterior:"
+            ls -la prev/ | head -20
+          else
+            echo "No hay rama 'data' todavia: primera publicacion, sin deltas."
+          fi
+
       - name: Construir los snapshots
         env:
           MODE: ${{ inputs.mode || 'dump' }}
@@ -83,6 +109,16 @@ jobs:
             node scripts/build-db.mjs --mode=api \
               --countries="$COUNTRIES" --split --out-dir=out
           fi
+
+      - name: Calcular los deltas del dia
+        run: |
+          # --verify aplica cada delta sobre una copia del snapshot anterior y
+          # comprueba que reproduce el nuevo FILA A FILA. Si no, aborta sin
+          # publicar: un delta mal calculado no falla en el navegador, deja el
+          # catalogo del usuario con datos que no corresponden a ninguna version
+          # y la siguiente comprobacion lo dara por al dia. Comprobarlo aqui
+          # cuesta unos segundos por pais.
+          node scripts/build-delta.mjs --old=prev --new=out --keep=14 --verify
 
       - name: Comprobar que el resultado es razonable
         run: |
@@ -120,7 +156,9 @@ jobs:
           git checkout --orphan data-tmp
           git rm -rf --cached . >/dev/null
           mv out/*.sqlite3 out/index.json ./
-          rm -rf out
+          # Los deltas solo existen a partir de la segunda reconstruccion.
+          [ -d out/deltas ] && mv out/deltas ./ || true
+          rm -rf out prev
           printf '%s\n' \
             '# Rama `data`' '' \
             'Una base SQLite por pais, mas `index.json` con sus tamanos.' \
@@ -129,6 +167,11 @@ jobs:
             'Los paises pequenos se descargan enteros y funcionan sin conexion;' \
             'los grandes se consultan por rangos HTTP. El cliente lo decide' \
             'leyendo `index.json`.' '' \
+            'En `deltas/<pais>/<version>.jsonl.gz` van las actualizaciones' \
+            'incrementales: un cliente con el catalogo de ayer se pone al dia' \
+            'con kilobytes en vez de volver a bajarse decenas de megas.' \
+            'Se calculan comparando dos generaciones del snapshot, no con los' \
+            'deltas de Open Food Facts, que vienen sin datos nutricionales.' '' \
             'Se sirven desde raw.githubusercontent.com porque GitHub Pages' \
             'comprime los archivos y eso rompe las peticiones Range.' '' \
             'Datos de Open Food Facts bajo licencia ODbL-1.0.' \
@@ -139,6 +182,7 @@ jobs:
           # objetivo. Sin -f, git los ignora en silencio y se publicaria una
           # rama vacia despues de una hora de trabajo.
           git add -f ./*.sqlite3 index.json README.md
+          [ -d deltas ] && git add -f deltas || true
 
           # Red de seguridad frente a ese fallo silencioso: si alguien quita el
           # -f "limpiando", esto lo detiene aqui en lugar de dejar la rama sin

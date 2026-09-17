@@ -6,7 +6,8 @@
   "description": "Snapshot estatico de productos, consultable por HTTP Range. Datos de Open Food Facts bajo ODbL.",
   "license": "ODbL-1.0",
   "scripts": {
-    "build": "node scripts/build-db.mjs"
+    "build": "node scripts/build-db.mjs",
+    "delta": "node scripts/build-delta.mjs"
   },
   "devDependencies": {
     "better-sqlite3": "^12.4.1"
