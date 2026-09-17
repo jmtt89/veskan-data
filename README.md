@@ -20,13 +20,31 @@ Ver [LICENSE](LICENSE).
 ## Cómo se consume
 
 ```
-https://jmtt89.github.io/veskan-data/snapshot.sqlite3
+https://raw.githubusercontent.com/jmtt89/veskan-data/data/snapshot.sqlite3
 ```
 
-El servidor de GitHub Pages responde `HTTP 206` con `Content-Range`
-(verificado), así que un cliente puede leer solo las páginas que necesite en
-lugar de descargar el archivo entero. Una consulta por código de barras
-transfiere del orden de 100–200 kB.
+El snapshot vive en la rama huérfana `data`, que se reemplaza entera en cada
+reconstrucción para que el historial no acumule binarios.
+
+### Por qué raw y no GitHub Pages
+
+Porque **Pages comprime el archivo con gzip y aplica los rangos HTTP al flujo
+comprimido**. Verificado el 2026-09-17:
+
+| Petición | `content-length` |
+|---|---|
+| `HEAD` sin `Accept-Encoding` (curl) | 1.105.920 ← el real |
+| `HEAD` con `Accept-Encoding` (navegador) | 317.532 ← comprimido |
+
+Un `Range` devolvía entonces `content-range: …/317532` y bytes que no
+corresponden al archivo, así que SQLite respondía `SQLITE_CORRUPT`. Con curl no
+se reproducía, porque curl no pide compresión: solo fallaba en navegadores.
+jsDelivr se comporta igual. Pages no comprime `image/*`, pero renombrar la base
+a `.png` sería una mentira frágil.
+
+`raw.githubusercontent.com` no comprime, respeta los rangos sobre los bytes
+reales y responde `access-control-allow-origin: *`. El cliente lee solo las
+páginas que necesita en lugar de descargar el archivo entero.
 
 ## Estructura del archivo
 

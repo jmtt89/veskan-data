@@ -1,17 +1,21 @@
 # Reconstruccion nocturna del snapshot.
 #
-# Punto clave del diseno: el .sqlite3 NO se hace commit. Se sube como artefacto
-# de Pages y se publica. Un binario de decenas de MB regenerado cada noche
-# anadiria su tamano integro al historial de git en cada commit (los binarios no
-# admiten delta), y en un ano el repositorio seria ingobernable. Asi se queda en
-# unos kilobytes para siempre.
+# Dos decisiones de diseno que conviene entender antes de tocar esto:
+#
+# 1. El snapshot se publica en la rama huerfana `data`, reemplazada entera con
+#    --force en cada ejecucion. Un binario de decenas de MB regenerado a diario
+#    anadiria su tamano integro al historial en cada commit (los binarios no
+#    admiten delta): en un ano el repositorio seria ingobernable. Reemplazando
+#    la rama, el historial nunca acumula.
+#
+# 2. Se sirve desde raw.githubusercontent.com y NO desde GitHub Pages, porque
+#    Pages comprime el archivo con gzip y aplica los rangos HTTP al flujo
+#    comprimido. El navegador recibia entonces bytes que no corresponden al
+#    archivo y SQLite respondia SQLITE_CORRUPT. Con curl no se reproducia,
+#    porque curl no pide compresion.
 name: Construir snapshot
 
 on:
-  # Un push despliega el snapshot que ya este en public/ SIN reconstruirlo.
-  # Sirve para arrancar el sitio y para correcciones puntuales.
-  push:
-    branches: [main]
   schedule:
     # 04:20 UTC: despues de que Open Food Facts publique su volcado nocturno.
     - cron: '20 4 * * *'
@@ -21,98 +25,80 @@ on:
         description: 'Paises separados por comas'
         default: 'spain,mexico,colombia,venezuela,argentina,chile,peru'
       mode:
-        description: 'api (rapido) o dump (completo)'
+        description: 'dump (completo, ~12 GB en streaming) o api (rapido, parcial)'
         default: 'dump'
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  # Escritura porque el resultado se empuja a la rama `data`.
+  contents: write
 
 concurrency:
-  group: pages
+  group: snapshot
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
-      # En un push no se reconstruye nada: se publica el snapshot del
-      # repositorio. Reconstruir en cada push gastaria media hora y, en modo
-      # api, arriesgaria chocar con el limite de peticiones de Open Food Facts
-      # desde las IP compartidas de los runners.
-      - name: Decidir si hay que reconstruir
-        id: plan
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "rebuild=false" >> "$GITHUB_OUTPUT"
-            echo "Push: se publica el snapshot existente."
-          else
-            echo "rebuild=true" >> "$GITHUB_OUTPUT"
-            echo "Evento ${{ github.event_name }}: se reconstruye."
-          fi
-
       - uses: actions/setup-node@v4
-        if: steps.plan.outputs.rebuild == 'true'
         with:
           node-version: '22'
 
       - run: npm install
-        if: steps.plan.outputs.rebuild == 'true'
 
       - name: Construir el snapshot
-        if: steps.plan.outputs.rebuild == 'true'
         env:
           MODE: ${{ inputs.mode || 'dump' }}
           COUNTRIES: ${{ inputs.countries || 'spain,mexico,colombia,venezuela,argentina,chile,peru' }}
         run: |
-          mkdir -p public
+          set -o pipefail
+          mkdir -p out
           if [ "$MODE" = "dump" ]; then
-            # El volcado JSONL pesa 12 GB comprimidos y el runner tiene ~14 GB
-            # libres: guardarlo en disco dejaria la maquina al limite. Se
-            # transmite directamente al parser, sin almacenar nada.
-            curl -fL --retry 3 --retry-delay 30 \
+            # El volcado JSONL pesa 12 GB comprimidos y el runner solo tiene
+            # ~14 GB libres: guardarlo en disco dejaria la maquina al limite.
+            # Se transmite directamente al parser, sin almacenar nada.
+            curl -fsSL --retry 3 --retry-delay 30 \
               https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz \
               | node scripts/build-db.mjs --mode=dump --stdin \
-                  --countries="$COUNTRIES" --out=public/snapshot.sqlite3
+                  --countries="$COUNTRIES" --out=out/snapshot.sqlite3
           else
             node scripts/build-db.mjs --mode=api \
-              --countries="$COUNTRIES" --out=public/snapshot.sqlite3
+              --countries="$COUNTRIES" --out=out/snapshot.sqlite3
           fi
 
-      # Barrera de seguridad: si el snapshot sale vacio o absurdamente pequeno,
-      # es que algo fallo en la descarga. Mejor conservar el anterior que
-      # publicar una base rota sobre la que ya funcionaba.
       - name: Comprobar que el resultado es razonable
         run: |
-          size=$(stat -c%s public/snapshot.sqlite3)
+          size=$(stat -c%s out/snapshot.sqlite3)
           echo "Tamano: $size bytes"
+          # Si la descarga o el filtrado fallaron, el archivo sale minusculo.
+          # Abortar conserva el snapshot anterior, que al menos funcionaba.
           if [ "$size" -lt 100000 ]; then
-            echo "El snapshot es sospechosamente pequeno. Se aborta."
+            echo "::error::Snapshot sospechosamente pequeno ($size B). Se aborta."
             exit 1
           fi
+          # Verificar que es un SQLite legible de verdad, no un archivo truncado
+          # que simplemente pesa lo suficiente.
+          head -c 15 out/snapshot.sqlite3 | grep -q "SQLite format 3" \
+            || { echo "::error::No es un archivo SQLite valido."; exit 1; }
 
-      - name: Publicar la licencia junto a los datos
-        run: cp LICENSE public/LICENSE
-
-      # `enablement: true` activa Pages si aun no lo esta, en vez de fallar.
-      # Sin esto, el primer push de un repositorio nuevo siempre falla porque
-      # el workflow corre antes de que nadie haya configurado Pages a mano.
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: public
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publicar en la rama 'data'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan data-tmp
+          git rm -rf --cached . >/dev/null
+          mv out/snapshot.sqlite3 ./snapshot.sqlite3
+          printf '%s\n' \
+            '# Rama `data`' '' \
+            'Solo el snapshot, reemplazado entero en cada reconstruccion para que' \
+            'el historial no acumule binarios. El codigo vive en `main`.' '' \
+            'Se sirve desde raw.githubusercontent.com porque GitHub Pages comprime' \
+            'el archivo y eso rompe las peticiones Range.' '' \
+            'Datos de Open Food Facts bajo licencia ODbL-1.0.' \
+            > README.md
+          git add -f snapshot.sqlite3 README.md
+          git commit -m "Snapshot $(date -u +%Y-%m-%d) (${{ inputs.mode || 'dump' }})"
+          git push --force origin data-tmp:data
