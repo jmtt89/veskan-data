@@ -2,7 +2,7 @@
 #
 # Tres decisiones de diseno que conviene entender antes de tocar esto:
 #
-# 0. Los catalogos de mas de 80 MB se parten en VARIOS SQLite completos, por
+# 0. Los catalogos de mas de 92 MB se parten en VARIOS SQLite completos, por
 #    rango de codigo de barras. GitHub rechaza cualquier archivo de mas de
 #    100 MB, asi que Estados Unidos (154 MB) era directamente impublicable y
 #    tumbaba la publicacion entera. Cada parte es una base funcional con su

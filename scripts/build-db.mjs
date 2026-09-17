@@ -330,12 +330,18 @@ function finalizeDb(target, maxProducts) {
  * Limite por archivo.
  *
  * GitHub rechaza cualquier archivo de mas de 100 MB en el push, asi que un
- * catalogo que lo supere no es "grande": es impublicable. Se parte en varios
- * SQLite completos. 80 MB deja margen para que crezca entre reconstrucciones
- * sin tener que volver a partirlo -- y volver a partirlo obliga a todo el mundo
- * a descargarlo entero, porque las filas cambian de archivo.
+ * catalogo que lo supere no es "grande": es impublicable.
+ *
+ * 92 MB, y no menos, porque partir es CARO para el usuario: obliga a descargar
+ * ese pais entero otra vez, ya que las filas cambian de archivo y los deltas
+ * dejan de encadenar. Solo se parte cuando de verdad no cabe.
+ *
+ * Con 80 MB, Espana (76,6 MB) se habria partido en unas seis semanas sin
+ * ninguna necesidad: cabe de sobra bajo el limite real. Con 92 MB tiene medio
+ * ano de margen, y los 8 MB que quedan son mucho mas de lo que crece un
+ * catalogo entre dos reconstrucciones nocturnas.
  */
-const MAX_PART_BYTES = 80 * 1024 * 1024;
+const MAX_PART_BYTES = 92 * 1024 * 1024;
 
 /**
  * Parte un catalogo en varios SQLite, cada uno completo y funcional.
