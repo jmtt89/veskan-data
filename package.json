@@ -1,0 +1,14 @@
+{
+  "name": "veskan-data",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Snapshot estatico de productos, consultable por HTTP Range. Datos de Open Food Facts bajo ODbL.",
+  "license": "ODbL-1.0",
+  "scripts": {
+    "build": "node scripts/build-db.mjs"
+  },
+  "devDependencies": {
+    "better-sqlite3": "^12.4.1"
+  }
+}

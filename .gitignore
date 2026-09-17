@@ -1,0 +1,5 @@
+node_modules/
+# El volcado descargado de Open Food Facts: ~0,9 GB, jamas al repositorio.
+data/
+*.jsonl.gz
+*.log
