@@ -225,95 +225,114 @@ async function main() {
     : { countries: {} };
 
   for (const [pais, entry] of Object.entries(index.countries)) {
-    const oldPath = resolve(OLD_DIR, `${pais}.sqlite3`);
-    const newPath = resolve(NEW_DIR, `${pais}.sqlite3`);
-    if (!existsSync(oldPath)) {
-      console.log(`  ${pais}: sin version anterior, se publica solo el catalogo completo`);
-      entry.deltas = [];
-      continue;
-    }
+    const partesNuevas = entry.parts ?? [{ file: `${pais}.sqlite3`, from: null, to: null }];
+    const partesViejas = previo.countries?.[pais]?.parts ?? [
+      { file: `${pais}.sqlite3`, from: null, to: null },
+    ];
 
     /**
-     * Si el esquema cambio, NO se emite delta.
+     * Si el catalogo se ha vuelto a partir, NO hay delta.
      *
-     * Podria compararse solo por las columnas comunes, pero entonces los
-     * productos cuya unica novedad fuera la columna nueva no viajarian, y los
-     * catalogos ya descargados se quedarian con ese dato vacio para siempre sin
-     * que nada lo delatara. Una descarga completa es lo correcto, y pasa una
-     * vez por cambio de esquema.
+     * Al cambiar los cortes las filas se mudan de archivo, y un delta de filas
+     * no sabe expresar una mudanza: el cliente aplicaria altas en una parte sin
+     * darse de baja en la otra y acabaria con el producto duplicado. Cuando
+     * pasa, toca descargar el catalogo entero, igual que con un cambio de
+     * esquema. Por eso los cortes se congelan y esto deberia ser raro.
      */
-    const faltan = COLUMNS.filter((c) => !columnsOf(oldPath).has(c));
-    if (faltan.length) {
+    const mismosCortes =
+      partesViejas.length === partesNuevas.length &&
+      partesNuevas.every((p, i) => (p.from ?? '') === (partesViejas[i].from ?? '') &&
+                                    (p.to ?? '') === (partesViejas[i].to ?? ''));
+    if (!mismosCortes) {
       console.log(
-        `  ${pais}: el esquema cambio (faltan en la version anterior: ${faltan.join(', ')}), ` +
-          'sin delta; los clientes bajaran el catalogo completo',
+        `  ${pais}: el catalogo se ha partido de otra forma ` +
+          `(${partesViejas.length} → ${partesNuevas.length} partes), sin delta`,
       );
-      entry.deltas = [];
+      for (const p of partesNuevas) p.deltas = [];
       continue;
     }
 
-    const from = versionOf(oldPath);
-    const to = entry.version;
-    if (!from || !to) {
-      console.log(`  ${pais}: falta la version en una de las dos bases, sin delta`);
-      entry.deltas = [];
-      continue;
-    }
-    if (from === to) {
-      console.log(`  ${pais}: misma version (${from}), sin delta`);
-      entry.deltas = previo.countries?.[pais]?.deltas ?? [];
-      continue;
-    }
+    for (const [i, parte] of partesNuevas.entries()) {
+      const etiqueta = partesNuevas.length === 1 ? pais : `${pais} parte ${i + 1}`;
+      const oldPath = resolve(OLD_DIR, partesViejas[i].file);
+      const newPath = resolve(NEW_DIR, parte.file);
 
-    const t0 = Date.now();
-    const { upserts, deletes } = diff(oldPath, newPath);
-    const rel = `deltas/${pais}/${to}.jsonl.gz`;
-    const bytes = await writeDelta(
-      resolve(NEW_DIR, rel),
-      {
-        format: 1,
-        country: pais,
-        from,
-        to,
-        upserts: upserts.length,
-        deletes: deletes.length,
-        // Las columnas viajan en la cabecera para que anadir una al pipeline no
-        // exija publicar antes una version nueva del cliente.
-        columns: COLUMNS,
-      },
-      upserts,
-      deletes,
-    );
-
-    const cadena = [...(previo.countries?.[pais]?.deltas ?? [])];
-    cadena.push({ from, to, file: rel, bytes, upserts: upserts.length, deletes: deletes.length });
-
-    // Se podan los mas viejos y se borran sus archivos: si no, la rama crece
-    // sin limite con deltas que ya nadie puede encadenar.
-    const sobran = cadena.splice(0, Math.max(0, cadena.length - KEEP));
-    for (const d of sobran) {
-      const p = resolve(NEW_DIR, d.file);
-      if (existsSync(p)) rmSync(p);
-    }
-    entry.deltas = cadena;
-
-    if (VERIFY) {
-      const difs = verify(oldPath, newPath, upserts, deletes);
-      if (difs !== 0) {
-        console.error(
-          `::error::El delta de ${pais} NO reproduce el snapshot: ${difs} filas distintas. No se publica.`,
-        );
-        process.exit(1);
+      if (!existsSync(oldPath)) {
+        console.log(`  ${etiqueta}: sin version anterior, solo el catalogo completo`);
+        parte.deltas = [];
+        continue;
       }
-      console.log(`  ${pais}: delta verificado, reproduce el snapshot exactamente`);
-    }
 
-    const pct = entry.bytes ? ((bytes / entry.bytes) * 100).toFixed(2) : '0';
-    console.log(
-      `  ${pais.padEnd(16)} ${String(upserts.length).padStart(6)} altas/cambios  ` +
-        `${String(deletes.length).padStart(5)} bajas  ${(bytes / 1024).toFixed(1).padStart(8)} kB  ` +
-        `(${pct}% del catalogo, ${Date.now() - t0} ms)`,
-    );
+      const faltan = COLUMNS.filter((c) => !columnsOf(oldPath).has(c));
+      if (faltan.length) {
+        console.log(
+          `  ${etiqueta}: el esquema cambio (faltan: ${faltan.join(', ')}), sin delta; ` +
+            'los clientes bajaran el catalogo completo',
+        );
+        parte.deltas = [];
+        continue;
+      }
+
+      const from = versionOf(oldPath);
+      const to = entry.version;
+      if (!from || !to) {
+        console.log(`  ${etiqueta}: falta la version en una de las dos bases, sin delta`);
+        parte.deltas = [];
+        continue;
+      }
+      if (from === to) {
+        console.log(`  ${etiqueta}: misma version (${from}), sin delta`);
+        parte.deltas = partesViejas[i].deltas ?? [];
+        continue;
+      }
+
+      const t0 = Date.now();
+      const { upserts, deletes } = diff(oldPath, newPath);
+      // La ruta lleva el numero de parte: cada una tiene su propia cadena.
+      const carpeta = partesNuevas.length === 1 ? pais : `${pais}/${String(i + 1).padStart(2, '0')}`;
+      const rel = `deltas/${carpeta}/${to}.jsonl.gz`;
+      const bytes = await writeDelta(
+        resolve(NEW_DIR, rel),
+        {
+          format: 1,
+          country: pais,
+          part: i + 1,
+          from,
+          to,
+          upserts: upserts.length,
+          deletes: deletes.length,
+          columns: COLUMNS,
+        },
+        upserts,
+        deletes,
+      );
+
+      if (VERIFY) {
+        const difs = verify(oldPath, newPath, upserts, deletes);
+        if (difs !== 0) {
+          console.error(
+            `::error::El delta de ${etiqueta} NO reproduce el snapshot: ${difs} filas distintas. No se publica.`,
+          );
+          process.exit(1);
+        }
+      }
+
+      const cadena = [...(partesViejas[i].deltas ?? [])];
+      cadena.push({ from, to, file: rel, bytes, upserts: upserts.length, deletes: deletes.length });
+      const sobran = cadena.splice(0, Math.max(0, cadena.length - KEEP));
+      for (const d of sobran) {
+        const ruta = resolve(NEW_DIR, d.file);
+        if (existsSync(ruta)) rmSync(ruta);
+      }
+      parte.deltas = cadena;
+
+      const pct = parte.bytes ? ((bytes / parte.bytes) * 100).toFixed(2) : '0';
+      console.log(
+        `  ${etiqueta.padEnd(22)} ${String(upserts.length).padStart(6)} altas/cambios  ` +
+          `${String(deletes.length).padStart(5)} bajas  ${(bytes / 1024).toFixed(1).padStart(8)} kB  ` +
+          `(${pct}% de la parte, ${Date.now() - t0} ms)`,
+      );
+    }
   }
 
   writeFileSync(indexPath, JSON.stringify(index, null, 2));

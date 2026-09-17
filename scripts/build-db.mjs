@@ -23,7 +23,7 @@ import {
   SCHEMA,
   versionFromBuiltAt,
 } from './lib/schema.mjs';
-import { createReadStream, mkdirSync, statSync, existsSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createReadStream, mkdirSync, readFileSync, statSync, existsSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createGunzip } from 'node:zlib';
 import { createInterface } from 'node:readline';
 import { dirname, resolve } from 'node:path';
@@ -326,6 +326,110 @@ function finalizeDb(target, maxProducts) {
   };
 }
 
+/**
+ * Limite por archivo.
+ *
+ * GitHub rechaza cualquier archivo de mas de 100 MB en el push, asi que un
+ * catalogo que lo supere no es "grande": es impublicable. Se parte en varios
+ * SQLite completos. 80 MB deja margen para que crezca entre reconstrucciones
+ * sin tener que volver a partirlo -- y volver a partirlo obliga a todo el mundo
+ * a descargarlo entero, porque las filas cambian de archivo.
+ */
+const MAX_PART_BYTES = 80 * 1024 * 1024;
+
+/**
+ * Parte un catalogo en varios SQLite, cada uno completo y funcional.
+ *
+ * Se divide por RANGO DE CODIGO DE BARRAS y no por popularidad ni por
+ * categoria: es lo unico que permite al cliente saber en que archivo buscar sin
+ * consultarlos todos, que es justo la operacion que hace a cada escaneo.
+ *
+ * Los limites se comparan como CADENAS, no como numeros, porque es asi como
+ * ordena e indexa SQLite. Rellenar con ceros para compararlos como enteros
+ * daria un orden distinto del que tiene la tabla y los rangos no cuadrarian.
+ *
+ * Si se pasan limites previos se reutilizan tal cual. Es deliberado: recalcular
+ * los cortes cada noche movería filas de un archivo a otro, y entonces el delta
+ * diario dejaria de ser un diff de filas y habria que tratar las mudanzas. Los
+ * cortes se congelan y solo se rehacen cuando una parte se sale de tamano, que
+ * es un evento raro y que ya obliga a descargar de nuevo.
+ */
+function splitDb(sourcePath, country, outDir, previousBounds) {
+  const src = new Database(sourcePath, { readonly: true });
+  const total = src.prepare('SELECT COUNT(*) AS n FROM products').get().n;
+  const bytes = statSync(sourcePath).size;
+
+  let bounds = previousBounds;
+  if (!bounds || bounds.length === 0) {
+    const nParts = Math.max(2, Math.ceil(bytes / MAX_PART_BYTES));
+    const porParte = Math.ceil(total / nParts);
+    const corte = src.prepare('SELECT barcode FROM products ORDER BY barcode LIMIT 1 OFFSET ?');
+    bounds = [];
+    for (let i = 1; i < nParts; i++) {
+      const fila = corte.get(i * porParte);
+      if (fila) bounds.push(fila.barcode);
+    }
+    console.log(`  ${country}: ${(bytes / 1048576).toFixed(0)} MB, se parte en ${nParts}`);
+  } else {
+    console.log(`  ${country}: se reutilizan los ${bounds.length + 1} cortes anteriores`);
+  }
+
+  const meta = src.prepare('SELECT key, value FROM meta').all();
+  src.close();
+
+  // Rangos [desde, hasta): el primero sin limite inferior, el ultimo sin superior.
+  const rangos = [];
+  for (let i = 0; i <= bounds.length; i++) {
+    rangos.push({ from: i === 0 ? null : bounds[i - 1], to: i === bounds.length ? null : bounds[i] });
+  }
+
+  const parts = [];
+  for (const [i, rango] of rangos.entries()) {
+    const nombre = `${country}-${String(i + 1).padStart(2, '0')}.sqlite3`;
+    const destino = resolve(outDir, nombre);
+    if (existsSync(destino)) unlinkSync(destino);
+
+    const db = new Database(destino);
+    db.exec(SCHEMA);
+    db.exec(FTS_SCHEMA);
+    db.exec(`ATTACH DATABASE '${sourcePath.replace(/'/g, "''")}' AS origen`);
+
+    const cond = [];
+    if (rango.from !== null) cond.push(`barcode >= '${rango.from.replace(/'/g, "''")}'`);
+    if (rango.to !== null) cond.push(`barcode < '${rango.to.replace(/'/g, "''")}'`);
+    const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
+
+    db.exec(`INSERT INTO products (${COLUMNS.join(',')})
+             SELECT ${COLUMNS.join(',')} FROM origen.products ${where}`);
+    // El indice se rehace desde las filas copiadas en vez de copiarlo: asi no
+    // se arrastran los duplicados que pudiera tener el original.
+    db.exec(`INSERT INTO products_fts (barcode, name, brands)
+             SELECT barcode, name, COALESCE(brands, '') FROM products`);
+
+    const escribirMeta = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)');
+    for (const m of meta) escribirMeta.run(m.key, m.value);
+    escribirMeta.run('part', String(i + 1));
+    escribirMeta.run('part_from', rango.from ?? '');
+    escribirMeta.run('part_to', rango.to ?? '');
+
+    db.exec('VACUUM');
+    db.exec('ANALYZE');
+    const n = db.prepare('SELECT COUNT(*) AS n FROM products').get().n;
+    db.close();
+
+    const tam = statSync(destino).size;
+    parts.push({ file: nombre, from: rango.from, to: rango.to, products: n, bytes: tam });
+    console.log(
+      `    ${nombre.padEnd(28)} ${String(n).padStart(7)} productos  ${(tam / 1048576).toFixed(1).padStart(6)} MB` +
+        (tam > 100 * 1024 * 1024 ? '  AVISO: sigue por encima de 100 MB' : ''),
+    );
+  }
+
+  // El archivo entero ya no se publica: lo sustituyen sus partes.
+  unlinkSync(sourcePath);
+  return parts;
+}
+
 async function main() {
   /**
    * Con `--split`, en lugar de una base con todos los paises se genera UNA POR
@@ -443,6 +547,28 @@ async function main() {
   const results = [...targets.values()].map((t) => finalizeDb(t, caps[t.country ?? '']));
 
   /**
+   * Cortes anteriores, para no mover filas de archivo entre noches.
+   *
+   * Se leen del indice publicado la vez anterior, que el workflow deja en
+   * `--prev`. Sin el, la primera reconstruccion los calcula y las siguientes
+   * los heredan.
+   */
+  const prevIndexPath = args.prev ? resolve(ROOT, String(args.prev), 'index.json') : undefined;
+  const prevIndex =
+    prevIndexPath && existsSync(prevIndexPath)
+      ? JSON.parse(readFileSync(prevIndexPath, 'utf8'))
+      : { countries: {} };
+
+  // Los que no caben en un archivo de GitHub se parten en varios, completos.
+  for (const r of results) {
+    if (!r.country || r.bytes <= MAX_PART_BYTES) continue;
+    const anterior = prevIndex.countries?.[r.country]?.parts;
+    const bounds = anterior?.map((p) => p.to).filter((t) => t !== null && t !== undefined) ?? [];
+    r.parts = splitDb(r.path, r.country, outDir, bounds);
+    r.bytes = r.parts.reduce((t, p) => t + p.bytes, 0);
+  }
+
+  /**
    * Indice publicado junto a las bases.
    *
    * El cliente lo lee para decidir la estrategia de cada pais SIN tener que
@@ -463,10 +589,18 @@ async function main() {
           .map((r) => [
             r.country,
             {
-              file: `${r.country}.sqlite3`,
+              // `file` solo cuando hay un unico archivo. Un cliente que no
+              // entienda `parts` se saltara los catalogos partidos, que es
+              // mejor que intentar abrir uno incompleto.
+              ...(r.parts ? {} : { file: `${r.country}.sqlite3` }),
               products: r.count,
               bytes: r.bytes,
               version: r.version,
+              // Siempre hay `parts`, aunque sea una sola: asi el cliente tiene
+              // un solo camino y no dos.
+              parts: r.parts ?? [
+                { file: `${r.country}.sqlite3`, from: null, to: null, products: r.count, bytes: r.bytes },
+              ],
               deltas: [],
             },
           ]),
