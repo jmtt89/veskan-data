@@ -65,6 +65,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Los scripts de construccion viven en el repositorio de codigo, no aqui.
+      # Antes estaban duplicados en los dos, sincronizados copiando ficheros a
+      # mano: si una copia se quedaba atras, este workflow seguia publicando
+      # catalogos con la version vieja del algoritmo SIN que nada fallara. Lo
+      # que se publica tiene que salir del mismo codigo que la aplicacion lee.
+      - name: Traer los scripts de construccion
+        uses: actions/checkout@v4
+        with:
+          repository: jmtt89/veskan
+          ref: main
+          path: veskan
+          sparse-checkout: scripts
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -111,11 +124,11 @@ jobs:
             # alguien escanea de verdad.
             curl -fsSL --retry 3 --retry-delay 30 \
               https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz \
-              | node scripts/build-db.mjs --mode=dump --stdin \
+              | node veskan/scripts/build-db.mjs --mode=dump --stdin \
                   --countries="$COUNTRIES" --split --out-dir=out --prev=prev \
                   --max-per-country=united-states:300000,spain:380000
           else
-            node scripts/build-db.mjs --mode=api \
+            node veskan/scripts/build-db.mjs --mode=api \
               --countries="$COUNTRIES" --split --out-dir=out --prev=prev
           fi
 
@@ -127,7 +140,7 @@ jobs:
           # catalogo del usuario con datos que no corresponden a ninguna version
           # y la siguiente comprobacion lo dara por al dia. Comprobarlo aqui
           # cuesta unos segundos por pais.
-          node scripts/build-delta.mjs --old=prev --new=out --keep=14 --verify
+          node veskan/scripts/build-delta.mjs --old=prev --new=out --keep=14 --verify
 
       - name: Comprobar que el resultado es razonable
         run: |
@@ -149,7 +162,7 @@ jobs:
             # nuevo (las filas cambian de archivo).
             if [ "$size" -gt 104857600 ]; then
               echo "::error::$(basename "$f") supera los 100 MB ($size B), git lo rechazaria."
-              echo "::error::Baja MAX_PART_BYTES en scripts/build-db.mjs para partirlo en mas trozos."
+              echo "::error::Baja MAX_PART_BYTES en veskan/scripts/build-db.mjs para partirlo en mas trozos."
               exit 1
             fi
             if [ "$size" -lt 20000 ]; then
@@ -174,7 +187,7 @@ jobs:
           mv out/*.sqlite3 out/index.json ./
           # Los deltas solo existen a partir de la segunda reconstruccion.
           [ -d out/deltas ] && mv out/deltas ./ || true
-          rm -rf out prev
+          rm -rf out prev veskan
           printf '%s\n' \
             '# Rama `data`' '' \
             'Una base SQLite por pais, mas `index.json` con sus tamanos.' \

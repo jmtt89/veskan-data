@@ -60,9 +60,17 @@ se guardan ya resueltas. Eso deja el registro en unos 693 bytes por producto.
 
 ## Construirlo a mano
 
+Los scripts de construcción **no viven aquí**, sino en el repositorio de código
+[jmtt89/veskan](https://github.com/jmtt89/veskan). Estuvieron duplicados en los
+dos repositorios, sincronizados copiando ficheros a mano, y esa es una forma
+silenciosa de fallar: si una copia se quedaba atrás, este workflow seguía
+publicando catálogos con la versión vieja del algoritmo sin que nada avisara.
+Lo que se publica tiene que salir del mismo código que lee la aplicación.
+
 ```bash
+git clone https://github.com/jmtt89/veskan.git
 npm install
-node scripts/build-db.mjs --countries=spain,mexico,colombia,venezuela --limit=500
+node veskan/scripts/build-db.mjs --countries=spain,mexico,colombia,venezuela --limit=500
 ```
 
 Para el snapshot completo, desde el volcado nocturno de Open Food Facts:
@@ -71,9 +79,12 @@ Para el snapshot completo, desde el volcado nocturno de Open Food Facts:
 # El volcado JSONL pesa 12 GB comprimidos. Se transmite en vez de guardarse:
 # un runner de GitHub Actions solo tiene ~14 GB libres de disco.
 curl -fL https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz \
-  | node scripts/build-db.mjs --mode=dump --stdin \
+  | node veskan/scripts/build-db.mjs --mode=dump --stdin \
       --countries=spain,mexico,colombia,venezuela
 ```
+
+Las rutas se resuelven contra el directorio desde el que se ejecuta, no contra
+la ubicación del script, así que las bases salen donde lanzas el comando.
 
 ## Límites a vigilar
 

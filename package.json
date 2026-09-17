@@ -3,12 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Snapshot estatico de productos, consultable por HTTP Range. Datos de Open Food Facts bajo ODbL.",
+  "description": "Snapshot estatico de productos, consultable por HTTP Range. Los scripts de construccion viven en el repositorio de codigo (jmtt89/veskan); aqui solo esta el workflow que los ejecuta y publica el resultado. Datos de Open Food Facts bajo ODbL.",
   "license": "ODbL-1.0",
-  "scripts": {
-    "build": "node scripts/build-db.mjs",
-    "delta": "node scripts/build-delta.mjs"
-  },
   "devDependencies": {
     "better-sqlite3": "^12.4.1"
   }
