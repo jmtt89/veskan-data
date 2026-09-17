@@ -16,7 +16,7 @@
  */
 
 import Database from 'better-sqlite3';
-import { createReadStream, mkdirSync, statSync, existsSync, unlinkSync } from 'node:fs';
+import { createReadStream, mkdirSync, statSync, existsSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createGunzip } from 'node:zlib';
 import { createInterface } from 'node:readline';
 import { dirname, resolve } from 'node:path';
@@ -251,11 +251,15 @@ async function collectFromApi() {
       }
       if (!data?.products?.length) break;
       for (const p of data.products) {
-        if (seen.has(p.code)) continue;
         const mapped = mapProduct(p);
         if (!mapped) continue;
-        seen.add(p.code);
-        out.push(mapped);
+        // Un mismo producto puede aparecer en varios paises. Se registra en
+        // cada uno, porque en modo --split cada pais tiene su propia base y no
+        // son particiones de una sola.
+        const key = `${country}:${p.code}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ row: mapped, country });
         collected++;
       }
       process.stdout.write(`\r  ${country}: ${collected} productos            `);
@@ -293,14 +297,13 @@ async function* readDump(path) {
   }
 }
 
-async function main() {
-  mkdirSync(dirname(OUT), { recursive: true });
-  if (existsSync(OUT)) unlinkSync(OUT);
-
-  const db = new Database(OUT);
+/** Crea una base vacia con el esquema completo. */
+function createDb(path) {
+  mkdirSync(dirname(path), { recursive: true });
+  if (existsSync(path)) unlinkSync(path);
+  const db = new Database(path);
   db.exec(SCHEMA);
   db.exec(FTS_SCHEMA);
-
   const insert = db.prepare(
     `INSERT OR REPLACE INTO products (${COLUMNS.join(',')})
      VALUES (${COLUMNS.map((c) => '@' + c).join(',')})`,
@@ -308,85 +311,189 @@ async function main() {
   const insertFts = db.prepare(
     'INSERT INTO products_fts (barcode, name, brands) VALUES (@barcode, @name, @brands)',
   );
-  const insertMany = db.transaction((rows) => {
-    for (const r of rows) {
-      insert.run(r);
-      insertFts.run({ barcode: r.barcode, name: r.name, brands: r.brands ?? '' });
-    }
-  });
+  return {
+    db,
+    path,
+    count: 0,
+    pending: [],
+    // Una transaccion por lote: sin esto habria un fsync por fila.
+    flushBatch: db.transaction((rows) => {
+      for (const r of rows) {
+        insert.run(r);
+        insertFts.run({ barcode: r.barcode, name: r.name, brands: r.brands ?? '' });
+      }
+    }),
+  };
+}
 
-  let rows;
+function finalizeDb(target) {
+  const meta = target.db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)');
+  meta.run('built_at', new Date().toISOString());
+  meta.run('source', 'Open Food Facts (ODbL)');
+  meta.run('license', 'ODbL-1.0');
+  meta.run('page_size', String(PAGE_SIZE));
+  if (target.country) meta.run('country', target.country);
+  // VACUUM compacta y deja las paginas contiguas: menos peticiones por consulta.
+  target.db.exec('VACUUM');
+  target.db.exec('ANALYZE');
+  const n = target.db.prepare('SELECT COUNT(*) AS n FROM products').get().n;
+  target.db.close();
+  return { path: target.path, count: n, bytes: statSync(target.path).size, country: target.country };
+}
+
+async function main() {
+  /**
+   * Con `--split`, en lugar de una base con todos los paises se genera UNA POR
+   * PAIS, en la misma pasada sobre el volcado.
+   *
+   * El motivo es de red, no de gusto: un SQLite comprime un 71%, asi que la
+   * base entera de Venezuela son 0,3 MB por la red, menos que dos consultas por
+   * rangos. Descargarla completa sale mas barato Y funciona sin conexion, que
+   * es justo donde mas falta hace. Solo paises grandes como Espana (70 MB
+   * comprimidos) siguen necesitando consulta por rangos.
+   */
+  const split = Boolean(args.split);
+  const outDir = resolve(ROOT, args['out-dir'] ?? dirname(OUT));
+
+  /** @type {Map<string, ReturnType<typeof createDb>>} */
+  const targets = new Map();
+  const targetFor = (country) => {
+    if (!split) {
+      if (!targets.has('_all')) targets.set('_all', { ...createDb(OUT), country: null });
+      return targets.get('_all');
+    }
+    if (!targets.has(country)) {
+      targets.set(country, {
+        ...createDb(resolve(outDir, `${country}.sqlite3`)),
+        country,
+      });
+    }
+    return targets.get(country);
+  };
+
+  /**
+   * Escritura por lotes.
+   *
+   * Sin transaccion, SQLite hace un fsync por fila: con cientos de miles de
+   * productos el proceso pasaria de minutos a horas. Se acumula por destino y
+   * se vuelca cada BATCH_SIZE filas dentro de una transaccion.
+   */
+  const BATCH_SIZE = 5000;
+
+  const flush = (t) => {
+    if (t.pending.length === 0) return;
+    t.flushBatch(t.pending);
+    t.pending = [];
+  };
+
+  const write = (row, countries) => {
+    // En modo split un producto vendido en varios paises va a cada base: son
+    // bases independientes, no particiones de una sola.
+    const dests = split ? countries : ['_all'];
+    for (const c of dests) {
+      const t = targetFor(c);
+      t.pending.push(row);
+      t.count++;
+      if (t.pending.length >= BATCH_SIZE) flush(t);
+    }
+  };
+
+  const flushAll = () => {
+    for (const t of targets.values()) flush(t);
+  };
+
+  const wanted = new Set(COUNTRIES);
+
   if (MODE === 'dump') {
     const useStdin = Boolean(args.stdin);
     const dumpPath = useStdin ? '-' : resolve(ROOT, args.dump ?? 'data/openfoodfacts-products.jsonl.gz');
     if (!useStdin && !existsSync(dumpPath)) {
       console.error(`No se encuentra el volcado en ${dumpPath}`);
       console.error('Descargalo con:');
-      console.error('  curl -L -o data/openfoodfacts-products.jsonl.gz \\');
-      console.error('    https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz');
+      console.error('  curl -fL https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz \\');
+      console.error('    | node scripts/build-db.mjs --mode=dump --stdin');
       process.exit(1);
     }
     console.log(useStdin ? 'Procesando el volcado desde la entrada estandar ...' : `Procesando ${dumpPath} ...`);
-    const wanted = new Set(COUNTRIES.map((c) => `en:${c}`));
+    if (split) console.log(`Una base por pais en ${outDir}`);
+
     const startedAt = Date.now();
     let seen = 0;
     let kept = 0;
-    let batch = [];
+
     for await (const p of readDump(dumpPath)) {
       seen++;
-      const countries = p.countries_tags ?? [];
-      if (wanted.size && !countries.some((c) => wanted.has(c))) continue;
+      const tags = (p.countries_tags ?? []).map((c) => c.replace(/^en:/, ''));
+      const matched = tags.filter((c) => wanted.has(c));
+      if (matched.length === 0) continue;
       const mapped = mapProduct(p);
       if (!mapped) continue;
-      batch.push(mapped);
+      write(mapped, matched);
       kept++;
-      if (batch.length >= 5000) {
-        insertMany(batch);
-        batch = [];
-      }
       if (seen % 50000 === 0) {
         const mins = ((Date.now() - startedAt) / 60000).toFixed(1);
-        process.stdout.write(`\r  leidos ${seen.toLocaleString('es')}, guardados ${kept.toLocaleString('es')} (${mins} min)   `);
+        process.stdout.write(
+          `\r  leidos ${seen.toLocaleString('es')}, guardados ${kept.toLocaleString('es')} (${mins} min)   `,
+        );
       }
     }
-    if (batch.length) insertMany(batch);
-    console.log(`\r  leidos ${seen}, guardados ${kept}          `);
-    rows = { length: kept };
+    flushAll();
+    console.log(`\r  leidos ${seen.toLocaleString('es')}, guardados ${kept.toLocaleString('es')}          `);
   } else {
     console.log(`Recolectando desde la API para: ${COUNTRIES.join(', ')}`);
     const collected = await collectFromApi();
-    insertMany(collected);
-    rows = collected;
+    // Cada producto va SOLO a la base del pais del que se obtuvo. Antes se
+    // pasaba la lista entera de paises y todos los archivos salian identicos.
+    for (const { row, country } of collected) write(row, [country]);
+    flushAll();
   }
 
-  db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
-    'built_at',
-    new Date().toISOString(),
-  );
-  db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run('source', 'Open Food Facts (ODbL)');
-  db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run('license', 'ODbL-1.0');
-  db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run('page_size', String(PAGE_SIZE));
+  const results = [...targets.values()].map(finalizeDb);
 
-  // VACUUM compacta y deja las paginas contiguas: menos peticiones Range por
-  // consulta, que es justo lo que se quiere optimizar aqui.
-  db.exec('VACUUM');
-  db.exec('ANALYZE');
-  const count = db.prepare('SELECT COUNT(*) AS n FROM products').get().n;
-  db.close();
+  /**
+   * Indice publicado junto a las bases.
+   *
+   * El cliente lo lee para decidir la estrategia de cada pais SIN tener que
+   * adivinar: si el archivo es pequeno lo descarga entero (funciona despues sin
+   * conexion), y si es grande lo consulta por rangos. Sin este indice habria
+   * que cablear los tamanos en el codigo del cliente y quedarian obsoletos a la
+   * primera reconstruccion.
+   */
+  if (split) {
+    const index = {
+      generated_at: new Date().toISOString(),
+      source: 'Open Food Facts',
+      license: 'ODbL-1.0',
+      page_size: PAGE_SIZE,
+      countries: Object.fromEntries(
+        results
+          .filter((r) => r.country)
+          .map((r) => [
+            r.country,
+            { file: `${r.country}.sqlite3`, products: r.count, bytes: r.bytes },
+          ]),
+      ),
+    };
+    const indexPath = resolve(outDir, 'index.json');
+    writeFileSync(indexPath, JSON.stringify(index, null, 2));
+    console.log(`\n  indice: ${indexPath}`);
+  }
 
-  const bytes = statSync(OUT).size;
-  console.log(`\nSnapshot: ${OUT}`);
-  console.log(`  productos:  ${count}`);
-  console.log(`  tamano:     ${(bytes / 1024 / 1024).toFixed(2)} MB`);
-  console.log(`  page_size:  ${PAGE_SIZE} B  (${Math.ceil(bytes / PAGE_SIZE)} paginas)`);
-  console.log(`  por producto: ${count ? (bytes / count).toFixed(0) : 0} B`);
-  if (bytes > 20 * 1024 * 1024) {
-    console.log('\n  Aviso: supera los 20 MB, limite por archivo de jsDelivr.');
+  console.log('');
+  let total = 0;
+  for (const r of results.sort((a, b) => b.bytes - a.bytes)) {
+    const perProduct = r.count ? (r.bytes / r.count).toFixed(0) : 0;
+    console.log(
+      `  ${r.path.split('/').pop().padEnd(22)} ${String(r.count).padStart(8)} productos  ` +
+        `${(r.bytes / 1024 / 1024).toFixed(2).padStart(8)} MB  ${perProduct} B/producto`,
+    );
+    total += r.bytes;
+    if (r.bytes > 100 * 1024 * 1024) {
+      console.log(`     aviso: supera los 100 MB, limite por archivo de GitHub.`);
+    }
   }
-  if (bytes > 100 * 1024 * 1024) {
-    console.log('  Aviso: supera los 100 MB, limite por archivo de GitHub. Parte por region.');
-  }
-  if (rows.length === 0) console.log('\n  Aviso: no se recolecto ningun producto.');
+  console.log(`\n  total: ${(total / 1024 / 1024).toFixed(2)} MB en ${results.length} archivo(s)`);
+  if (results.every((r) => r.count === 0)) console.log('\n  Aviso: no se guardo ningun producto.');
 }
 
 main().catch((e) => {

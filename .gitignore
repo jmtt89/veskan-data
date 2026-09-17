@@ -3,3 +3,10 @@ node_modules/
 data/
 *.jsonl.gz
 *.log
+
+# Snapshots generados en local. NUNCA al repositorio: son binarios de decenas de
+# MB y git no puede calcular diferencias, asi que cada commit anadiria su tamano
+# integro al historial para siempre. El Action los publica en la rama huerfana
+# `data`, que se reemplaza entera.
+*.sqlite3
+out/
