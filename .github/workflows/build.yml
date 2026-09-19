@@ -50,7 +50,7 @@ on:
         default: 'dump'
       max_part_mb:
         description: 'Tamano maximo por archivo antes de partir un pais, en MB'
-        default: '92'
+        default: '45'
 
 permissions:
   # Escritura porque el resultado se empuja a la rama `data`.
@@ -66,7 +66,7 @@ jobs:
     env:
       # A nivel de job porque lo leen dos pasos: el que construye y el que
       # comprueba los tamanos, que menciona el valor en su mensaje de error.
-      MAX_PART_MB: ${{ inputs.max_part_mb || '92' }}
+      MAX_PART_MB: ${{ inputs.max_part_mb || '45' }}
     # Medido en local: recorrer el volcado entero lleva algo mas de una hora.
     timeout-minutes: 180
     steps:
@@ -123,18 +123,24 @@ jobs:
             # El volcado JSONL pesa 12 GB comprimidos y el runner solo tiene
             # ~14 GB libres: guardarlo en disco dejaria la maquina al limite.
             # Se transmite directamente al parser, sin almacenar nada.
-            # --max-per-country acota los catalogos grandes a los productos
-            # mas escaneados. Estados Unidos tiene ~970.000 productos en Open
-            # Food Facts, que a 250 B serian 231 MB: por encima del limite de
-            # 100 MB por archivo de GitHub. Se conservan los 300.000 mas
-            # populares (~75 MB), que es donde esta practicamente todo lo que
-            # alguien escanea de verdad.
+            # Sin tope por pais: se publican TODOS los productos.
+            #
+            # Hubo uno de 300.000 para Estados Unidos, puesto cuando no existia
+            # el partido y un pais grande no cabia en el limite de 100 MB por
+            # archivo de GitHub. Ya no hace falta: los catalogos se parten solos
+            # y Espana acaba de hacerlo en dos mitades de 51,5 y 51,6 MB.
+            #
+            # Se dejaba fuera el 69% del catalogo estadounidense -670.565 de
+            # 970.565 productos-, y un producto que no esta obliga a gastar
+            # cupo de la API para resolverlo. Ademas el cliente abre los
+            # catalogos POR RANGOS por defecto, sin descargarlos: el tamano
+            # total solo pesa si el usuario pide la descarga, y ahi ya se le
+            # avisa antes.
             curl -fsSL --retry 3 --retry-delay 30 \
               https://static.openfoodfacts.org/data/openfoodfacts-products.jsonl.gz \
               | node veskan/scripts/build-db.mjs --mode=dump --stdin \
                   --countries="$COUNTRIES" --split --out-dir=out --prev=prev \
-                  --max-part-mb="$MAX_PART_MB" \
-                  --max-per-country=united-states:300000,spain:380000
+                  --max-part-mb="$MAX_PART_MB"
           else
             node veskan/scripts/build-db.mjs --mode=api \
               --countries="$COUNTRIES" --split --out-dir=out --prev=prev \
