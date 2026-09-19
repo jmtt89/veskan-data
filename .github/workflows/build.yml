@@ -22,13 +22,17 @@
 #    historial en cada commit (los binarios no admiten delta): en un ano el
 #    repositorio seria ingobernable.
 #
-# 3. Los deltas diarios se calculan AQUI, comparando el snapshot recien
-#    construido con el publicado la noche anterior. NO se usan los deltas que
-#    publica Open Food Facts en data/delta/: comprobado sobre dos de ellos
-#    separados doce dias, el campo `nutriments` viene vacio en el 100% de los
-#    registros, mientras que en el volcado completo lo trae relleno el 62%.
-#    Aplicarlos borraria energia, azucares, grasas y sal de cada producto
-#    actualizado.
+# 3. Entre semana se CONSTRUYE a partir de los deltas de Open Food Facts
+#    (data/delta/, ~26 MB) en vez de releer el volcado de 12 GB. Se
+#    descartaron en su dia por una medicion equivocada: se miro `nutriments` y
+#    venia vacio en el 100% de los registros. El dato estaba en
+#    `nutrition.aggregated_set`, igual que en el volcado completo -medido
+#    sobre un delta real: 0,0% frente a 72,9%-. El domingo se reconstruye
+#    entero porque los deltas no traen las bajas.
+#
+#    Aparte de eso, los deltas que consume el NAVEGADOR se calculan aqui,
+#    comparando el snapshot recien construido con el publicado la noche
+#    anterior. Son otra cosa: filas ya mapeadas de nuestro esquema.
 #
 # 4. Se sirve desde raw.githubusercontent.com y NO desde GitHub Pages, porque
 #    Pages comprime con gzip y aplica los rangos HTTP al flujo comprimido. El
