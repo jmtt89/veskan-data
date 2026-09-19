@@ -38,16 +38,23 @@ name: Construir snapshots
 
 on:
   schedule:
-    # 04:20 UTC: despues de que Open Food Facts publique su volcado nocturno.
-    - cron: '20 4 * * *'
+    # Entre semana, deltas: se bajan ~26 MB y se aplican sobre la generacion
+    # anterior, en minutos en vez de tres cuartos de hora.
+    - cron: '20 4 * * 1-6'
+    # Los domingos, volcado completo. No es opcional: los deltas de Open Food
+    # Facts «cannot tell you about deleted products», asi que una baja real solo
+    # se recoge reconstruyendo. Tambien reequilibra las partes, que con los
+    # deltas se van descompensando porque un producto nuevo cae en la que le
+    # toque por codigo de barras.
+    - cron: '20 4 * * 0'
   workflow_dispatch:
     inputs:
       countries:
         description: 'Paises separados por comas'
         default: 'spain,mexico,colombia,venezuela,argentina,chile,peru,united-states'
       mode:
-        description: 'dump (completo, 12 GB en streaming) o api (rapido, parcial)'
-        default: 'dump'
+        description: 'delta (rapido, sobre la generacion anterior) · dump (completo) · api (parcial)'
+        default: 'delta'
       max_part_mb:
         description: 'Tamano maximo por archivo antes de partir un pais, en MB'
         default: '45'
@@ -111,7 +118,8 @@ jobs:
 
       - name: Construir los snapshots
         env:
-          MODE: ${{ inputs.mode || 'dump' }}
+          # A mano manda `inputs.mode`. Programado, el domingo toca completo.
+          MODE: ${{ inputs.mode || (github.event.schedule == '20 4 * * 0' && 'dump' || 'delta') }}
           # Estados Unidos entra porque en Latinoamerica los importados
           # estadounidenses son habituales: medido, el 19,3% del catalogo
           # mexicano y el 13,8% del venezolano llevan prefijo GS1 de EE.UU.
@@ -119,7 +127,23 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p out
-          if [ "$MODE" = "dump" ]; then
+          if [ "$MODE" = "delta" ]; then
+            # Si no hay generacion anterior, o es mas vieja que los 13 dias de
+            # historico que guarda Open Food Facts, el script aborta con un
+            # mensaje claro. Se cae al volcado completo, que siempre funciona:
+            # vale mas tardar tres cuartos de hora que no publicar.
+            if node veskan/scripts/apply-off-delta.mjs --prev=prev --out-dir=out \
+                 --countries="$COUNTRIES"; then
+              MODE=listo
+            else
+              echo "::warning::No se pudieron aplicar los deltas. Se reconstruye desde el volcado."
+              MODE=dump
+              rm -rf out && mkdir -p out
+            fi
+          fi
+          if [ "$MODE" = "listo" ]; then
+            echo "Construido a partir de los deltas."
+          elif [ "$MODE" = "dump" ]; then
             # El volcado JSONL pesa 12 GB comprimidos y el runner solo tiene
             # ~14 GB libres: guardarlo en disco dejaria la maquina al limite.
             # Se transmite directamente al parser, sin almacenar nada.
