@@ -1,0 +1,351 @@
+{
+  "generated_at": "2026-09-19T04:29:36.284Z",
+  "source": "Open Food Facts",
+  "license": "ODbL-1.0",
+  "page_size": 4096,
+  "countries": {
+    "united-states": {
+      "products": 954716,
+      "bytes": 467668992,
+      "version": "20260919T042915Z",
+      "parts": [
+        {
+          "file": "united-states-01.sqlite3",
+          "from": null,
+          "to": "0021908452296",
+          "products": 77748,
+          "bytes": 47525888,
+          "deltas": []
+        },
+        {
+          "file": "united-states-02.sqlite3",
+          "from": "0021908452296",
+          "to": "0041190037735",
+          "products": 76603,
+          "bytes": 48877568,
+          "deltas": []
+        },
+        {
+          "file": "united-states-03.sqlite3",
+          "from": "0041190037735",
+          "to": "0051000229274",
+          "products": 80227,
+          "bytes": 45723648,
+          "deltas": []
+        },
+        {
+          "file": "united-states-04.sqlite3",
+          "from": "0051000229274",
+          "to": "0074175227692",
+          "products": 81527,
+          "bytes": 48123904,
+          "deltas": []
+        },
+        {
+          "file": "united-states-05.sqlite3",
+          "from": "0074175227692",
+          "to": "0093312101121",
+          "products": 80611,
+          "bytes": 49410048,
+          "deltas": []
+        },
+        {
+          "file": "united-states-06.sqlite3",
+          "from": "0093312101121",
+          "to": "0646670511318",
+          "products": 123065,
+          "bytes": 45555712,
+          "deltas": []
+        },
+        {
+          "file": "united-states-07.sqlite3",
+          "from": "0646670511318",
+          "to": "0781159004025",
+          "products": 92755,
+          "bytes": 48001024,
+          "deltas": []
+        },
+        {
+          "file": "united-states-08.sqlite3",
+          "from": "0781159004025",
+          "to": "0850619007644",
+          "products": 105855,
+          "bytes": 45461504,
+          "deltas": []
+        },
+        {
+          "file": "united-states-09.sqlite3",
+          "from": "0850619007644",
+          "to": "3026516006005",
+          "products": 105430,
+          "bytes": 44658688,
+          "deltas": []
+        },
+        {
+          "file": "united-states-10.sqlite3",
+          "from": "3026516006005",
+          "to": null,
+          "products": 130895,
+          "bytes": 44331008,
+          "deltas": []
+        }
+      ]
+    },
+    "spain": {
+      "products": 341422,
+      "bytes": 108183552,
+      "version": "20260919T042920Z",
+      "parts": [
+        {
+          "file": "spain-01.sqlite3",
+          "from": null,
+          "to": "7311310031015",
+          "products": 113385,
+          "bytes": 36372480,
+          "deltas": [
+            {
+              "from": "20260919T020640Z",
+              "to": "20260919T042920Z",
+              "file": "deltas/spain/01/20260919T042920Z.jsonl.gz",
+              "bytes": 349,
+              "upserts": 0,
+              "deletes": 0
+            }
+          ]
+        },
+        {
+          "file": "spain-02.sqlite3",
+          "from": "7311310031015",
+          "to": "8424626021539",
+          "products": 113522,
+          "bytes": 35827712,
+          "deltas": [
+            {
+              "from": "20260919T020640Z",
+              "to": "20260919T042920Z",
+              "file": "deltas/spain/02/20260919T042920Z.jsonl.gz",
+              "bytes": 351,
+              "upserts": 0,
+              "deletes": 0
+            }
+          ]
+        },
+        {
+          "file": "spain-03.sqlite3",
+          "from": "8424626021539",
+          "to": null,
+          "products": 114515,
+          "bytes": 35983360,
+          "deltas": [
+            {
+              "from": "20260919T020640Z",
+              "to": "20260919T042920Z",
+              "file": "deltas/spain/03/20260919T042920Z.jsonl.gz",
+              "bytes": 352,
+              "upserts": 0,
+              "deletes": 0
+            }
+          ]
+        }
+      ]
+    },
+    "argentina": {
+      "file": "argentina.sqlite3",
+      "products": 14387,
+      "bytes": 5435392,
+      "version": "20260919T042921Z",
+      "parts": [
+        {
+          "file": "argentina.sqlite3",
+          "from": null,
+          "to": null,
+          "products": 14387,
+          "bytes": 5435392,
+          "deltas": [
+            {
+              "from": "20260919T003722Z",
+              "to": "20260919T020641Z",
+              "file": "deltas/argentina/20260919T020641Z.jsonl.gz",
+              "bytes": 352,
+              "upserts": 0,
+              "deletes": 0
+            },
+            {
+              "from": "20260919T020641Z",
+              "to": "20260919T042921Z",
+              "file": "deltas/argentina/20260919T042921Z.jsonl.gz",
+              "bytes": 351,
+              "upserts": 0,
+              "deletes": 0
+            }
+          ]
+        }
+      ]
+    },
+    "mexico": {
+      "file": "mexico.sqlite3",
+      "products": 16374,
+      "bytes": 8560640,
+      "version": "20260919T042921Z",
+      "parts": [
+        {
+          "file": "mexico.sqlite3",
+          "from": null,
+          "to": null,
+          "products": 16374,
+          "bytes": 8560640,
+          "deltas": [
+            {
+              "from": "20260919T003722Z",
+              "to": "20260919T020642Z",
+              "file": "deltas/mexico/20260919T020642Z.jsonl.gz",
+              "bytes": 351,
+              "upserts": 0,
+              "deletes": 0
+            },
+            {
+              "from": "20260919T020642Z",
+              "to": "20260919T042921Z",
+              "file": "deltas/mexico/20260919T042921Z.jsonl.gz",
+              "bytes": 351,
+              "upserts": 0,
+              "deletes": 0
+            }
+          ]
+        }
+      ]
+    },
+    "chile": {
+      "file": "chile.sqlite3",
+      "products": 6156,
+      "bytes": 2940928,
+      "version": "20260919T042921Z",
+      "parts": [
+        {
+          "file": "chile.sqlite3",
+          "from": null,
+          "to": null,
+          "products": 6156,
+          "bytes": 2940928,
+          "deltas": [
+            {
+              "from": "20260919T003722Z",
+              "to": "20260919T020642Z",
+              "file": "deltas/chile/20260919T020642Z.jsonl.gz",
+              "bytes": 351,
+              "upserts": 0,
+              "deletes": 0
+            },
+            {
+              "from": "20260919T020642Z",
+              "to": "20260919T042921Z",
+              "file": "deltas/chile/20260919T042921Z.jsonl.gz",
+              "bytes": 351,
+              "upserts": 0,
+              "deletes": 0
+            }
+          ]
+        }
+      ]
+    },
+    "colombia": {
+      "file": "colombia.sqlite3",
+      "products": 6613,
+      "bytes": 2863104,
+      "version": "20260919T042921Z",
+      "parts": [
+        {
+          "file": "colombia.sqlite3",
+          "from": null,
+          "to": null,
+          "products": 6613,
+          "bytes": 2863104,
+          "deltas": [
+            {
+              "from": "20260919T003723Z",
+              "to": "20260919T020642Z",
+              "file": "deltas/colombia/20260919T020642Z.jsonl.gz",
+              "bytes": 353,
+              "upserts": 0,
+              "deletes": 0
+            },
+            {
+              "from": "20260919T020642Z",
+              "to": "20260919T042921Z",
+              "file": "deltas/colombia/20260919T042921Z.jsonl.gz",
+              "bytes": 352,
+              "upserts": 0,
+              "deletes": 0
+            }
+          ]
+        }
+      ]
+    },
+    "peru": {
+      "file": "peru.sqlite3",
+      "products": 2432,
+      "bytes": 1196032,
+      "version": "20260919T042921Z",
+      "parts": [
+        {
+          "file": "peru.sqlite3",
+          "from": null,
+          "to": null,
+          "products": 2432,
+          "bytes": 1196032,
+          "deltas": [
+            {
+              "from": "20260919T003723Z",
+              "to": "20260919T020642Z",
+              "file": "deltas/peru/20260919T020642Z.jsonl.gz",
+              "bytes": 350,
+              "upserts": 0,
+              "deletes": 0
+            },
+            {
+              "from": "20260919T020642Z",
+              "to": "20260919T042921Z",
+              "file": "deltas/peru/20260919T042921Z.jsonl.gz",
+              "bytes": 350,
+              "upserts": 0,
+              "deletes": 0
+            }
+          ]
+        }
+      ]
+    },
+    "venezuela": {
+      "file": "venezuela.sqlite3",
+      "products": 1523,
+      "bytes": 638976,
+      "version": "20260919T042921Z",
+      "parts": [
+        {
+          "file": "venezuela.sqlite3",
+          "from": null,
+          "to": null,
+          "products": 1523,
+          "bytes": 638976,
+          "deltas": [
+            {
+              "from": "20260919T003723Z",
+              "to": "20260919T020642Z",
+              "file": "deltas/venezuela/20260919T020642Z.jsonl.gz",
+              "bytes": 354,
+              "upserts": 0,
+              "deletes": 0
+            },
+            {
+              "from": "20260919T020642Z",
+              "to": "20260919T042921Z",
+              "file": "deltas/venezuela/20260919T042921Z.jsonl.gz",
+              "bytes": 353,
+              "upserts": 0,
+              "deletes": 0
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
