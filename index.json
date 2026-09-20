@@ -1,0 +1,218 @@
+{
+  "generado": "2026-09-20T20:46:40.204Z",
+  "descripcion": "Base de peligro de aditivos alimentarios. Prohibicion y retirada son cosas distintas: ver la columna tipo.",
+  "base": "https://raw.githubusercontent.com/jmtt89/veskan-data/aditivos/",
+  "formato": "parquet",
+  "licencias": {
+    "wikidata": "CC0",
+    "open-food-facts": "ODbL-1.0",
+    "efsa-openfoodtox": "CC-BY-ND",
+    "legislacion-ue": "Decision 2011/833/UE",
+    "regulacion-eeuu": "dominio publico",
+    "iarc": "atribucion"
+  },
+  "tablas": {
+    "aditivo_tags": {
+      "fichero": "aditivo_tags.parquet",
+      "bytes": 28308,
+      "filas": 775,
+      "columnas": [
+        "wikidata",
+        "tag",
+        "numero_e",
+        "nombre",
+        "nombre_en",
+        "via"
+      ]
+    },
+    "aditivos": {
+      "fichero": "aditivos.parquet",
+      "bytes": 50838,
+      "filas": 671,
+      "columnas": [
+        "wikidata",
+        "nombre_en",
+        "nombre_es",
+        "descripcion_en",
+        "cas",
+        "numero_e_wikidata",
+        "pubchem",
+        "dsstox",
+        "echa",
+        "unii"
+      ]
+    },
+    "clp": {
+      "fichero": "clp.parquet",
+      "bytes": 81341,
+      "filas": 1365,
+      "columnas": [
+        "cas",
+        "nombre",
+        "codigos",
+        "peor",
+        "cancerigeno",
+        "mutagenico",
+        "repro"
+      ]
+    },
+    "exposicion": {
+      "fichero": "exposicion.parquet",
+      "bytes": 11516,
+      "filas": 260,
+      "columnas": [
+        "tag",
+        "numero_e",
+        "riesgo",
+        "supera_media",
+        "supera_p95",
+        "vulnerables",
+        "anses",
+        "dictamen_titulo",
+        "dictamen_fecha",
+        "dictamen_url"
+      ]
+    },
+    "familia_miembros": {
+      "fichero": "familia_miembros.parquet",
+      "bytes": 4013,
+      "filas": 130,
+      "columnas": [
+        "familia",
+        "tag",
+        "nombre",
+        "wikidata"
+      ]
+    },
+    "familias": {
+      "fichero": "familias.parquet",
+      "bytes": 2130,
+      "filas": 45,
+      "columnas": [
+        "tag",
+        "nombre",
+        "wikidata",
+        "hereda_de",
+        "revisar"
+      ]
+    },
+    "gravedad": {
+      "fichero": "gravedad.parquet",
+      "bytes": 2883,
+      "filas": 52,
+      "columnas": [
+        "wikidata",
+        "nivel",
+        "descripcion",
+        "certeza",
+        "via",
+        "detalle",
+        "ida",
+        "posicion_en_nivel",
+        "desacuerdo",
+        "solo_una_fuente"
+      ]
+    },
+    "iarc": {
+      "fichero": "iarc.parquet",
+      "bytes": 31523,
+      "filas": 1040,
+      "columnas": [
+        "nombre",
+        "grupo",
+        "significado",
+        "cas",
+        "volumen",
+        "anio",
+        "anio_evaluacion"
+      ]
+    },
+    "legal_eeuu": {
+      "fichero": "legal_eeuu.parquet",
+      "bytes": 1697,
+      "filas": 36,
+      "columnas": [
+        "seccion",
+        "nombre",
+        "parte",
+        "alimentos",
+        "motivo"
+      ]
+    },
+    "legal_ue": {
+      "fichero": "legal_ue.parquet",
+      "bytes": 6754,
+      "filas": 344,
+      "columnas": [
+        "numero_e",
+        "nombre_reglamento",
+        "autorizado",
+        "via",
+        "listado_parte_b",
+        "retirado",
+        "caducado_el",
+        "celex"
+      ]
+    },
+    "motivos_retirada": {
+      "fichero": "motivos_retirada.parquet",
+      "bytes": 977,
+      "filas": 6,
+      "columnas": [
+        "numero_e",
+        "nombre",
+        "jurisdiccion",
+        "celex",
+        "motivo"
+      ]
+    },
+    "oft": {
+      "fichero": "oft.parquet",
+      "bytes": 340882,
+      "filas": 4387,
+      "columnas": [
+        "uuid",
+        "nombre",
+        "cas",
+        "param_code",
+        "ida",
+        "ida_unidad",
+        "sin_ida",
+        "sin_ida_motivo",
+        "sin_dosis_motivo",
+        "incertidumbre",
+        "critico_toxicidad",
+        "critico_efecto",
+        "critico_especie",
+        "critico_dosis",
+        "critico_descriptor"
+      ]
+    },
+    "prohibiciones": {
+      "fichero": "prohibiciones.parquet",
+      "bytes": 5981,
+      "filas": 32,
+      "columnas": [
+        "tag",
+        "numero_e",
+        "nombre",
+        "tipo",
+        "jurisdiccion",
+        "referencia",
+        "fecha",
+        "cumplimiento",
+        "verbo",
+        "alcance",
+        "alcance_detalle",
+        "motivo",
+        "base_legal",
+        "principal"
+      ]
+    }
+  },
+  "sqlite": {
+    "fichero": "aditivos.sqlite3",
+    "bytes": 94208,
+    "nota": "corte resuelto por numero E que consume la aplicacion; sin la evidencia"
+  }
+}
