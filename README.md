@@ -15,8 +15,8 @@ no son las mismas.
 | `aditivo_tags` | 775 | qué números E le corresponden a cada sustancia |
 | `gravedad` | 53 | nivel de peligro, certeza, y de dónde sale |
 | `prohibiciones` | 32 | prohibiciones y retiradas, una fila por jurisdicción |
-| `oft` | 5.434 | EFSA OpenFoodTox: IDA, efecto crítico, especie, dosis, y los hallazgos de geno/carcinogenicidad de cada expediente |
-| `oft_historial` | 3.760 | qué concluyó cada dictamen anterior de EFSA, con su fecha |
+| `oft` | 5.434 | EFSA OpenFoodTox: IDA, efecto crítico, especie, dosis, los hallazgos de geno/carcinogenicidad y **la conclusión del panel** |
+| `oft_historial` | 3.763 | qué dijo cada dictamen anterior de EFSA, con su fecha, su DOI y su panel |
 | `iarc` | 1.040 | clasificación de carcinogenicidad de la IARC |
 | `clp` | 1.365 | clasificaciones CMR del Anexo VI del Reglamento CLP |
 | `legal_ue` | 344 | estado en el Reglamento (CE) 1333/2008 |
@@ -33,7 +33,7 @@ aplicación. Si vas a analizar, usa el Parquet; el SQLite no lleva la evidencia.
 
 ## Cómo consultarlo
 
-Lo más simple es bajarlo: el conjunto entero son unos **960 KB**. La cifra
+Lo más simple es bajarlo: el conjunto entero son unos **1,23 MB**. La cifra
 exacta, y la de cada tabla, están en `index.json` — que lo genera el mismo
 script que escribe los Parquet, así que no se queda viejo.
 
@@ -119,19 +119,39 @@ dictamen —[10.2903/j.efsa.2023.8103](https://doi.org/10.2903/j.efsa.2023.8103)
 confirma su IDA de 5 mg/kg y concluye que *«no hay preocupación de seguridad»*.
 Por eso `hallazgo` **no alimenta `nivel`**.
 
-**Cómo se lee sin mentir: junto a `ida`.** Las dos columnas juntas dicen la
-frase entera, y las dos son hechos:
+**Y la conclusión del panel sí está: es `evaluacion`.** EFSA la escribe con
+prefijo codificado dentro de la justificación —`Assessment: some concern;
+Remarks: …`— en 6.013 filas del fichero, y el vocabulario es cerrado:
+`sin-preocupacion`, `preocupacion-baja`, `alguna-preocupacion`,
+`datos-insuficientes`, `faltan-datos`, `datos-de-baja-calidad`.
+`evaluacion_texto` trae la frase entera para poder comprobar la etiqueta.
 
-| | `hallazgo` | `ida` | se lee |
-|---|---|---|---|
-| E132 | `positivo` | 5 mg/kg | los estudios reportaron algo y EFSA mantiene una ingesta admisible |
-| E171 | `positivo` | — | los estudios reportaron algo y EFSA no fija ninguna |
+El dióxido de titanio es el caso completo: `hallazgo = positivo` **y**
+`evaluacion = alguna-preocupacion`, con el texto diciendo que *«a concern for
+genotoxicity could not be ruled out […] E 171 can no longer be considered as
+safe when used as a food additive»*. Ése es el dictamen que lo sacó de la
+lista de la Unión.
 
-Y eso no es deducción del lector: cuando EFSA tiene esa preocupación **la
-codifica**, `sin_ida_motivo = genotoxicidad`, y no asigna IDA. No hay una
-columna `conclusion` porque el fichero de EFSA no la trae; lo que trae es el
-valor de referencia que fijó cada dictamen —`ida_dictamen`, en 623 de las
-5.434— y el motivo codificado de no fijarlo.
+**Cuando no hay `evaluacion`, se lee `hallazgo` junto a `ida`.** Las dos son
+hechos y juntas dicen la frase entera:
+
+| | `hallazgo` | `evaluacion` | `ida` | se lee |
+|---|---|---|---|---|
+| E171 | `positivo` | `alguna-preocupacion` | — | los estudios reportaron algo y el panel concluyó que hay preocupación |
+| E132 | `positivo` | — | 5 mg/kg | los estudios reportaron algo y EFSA mantiene una ingesta admisible |
+
+Cuidado con dar la vuelta a esa regla: **la ausencia de IDA no significa por sí
+sola que haya preocupación.** El E171 no trae `sin_ida_motivo`; lo que trae es
+`sin_dosis_motivo = margen-de-seguridad`, que describe cómo se expresó el valor
+de referencia y aparece también en dictámenes que concluyeron que era
+aceptable. Para afirmar preocupación, usa `evaluacion`.
+
+**`panel` y `dominio` dicen quién lo evaluó y en qué contexto**, y hacen falta:
+EFSA dictamina también sobre **piensos**, y esos dictámenes salen mezclados con
+los de alimentos. El de piensos del dióxido de titanio es 41 días más reciente
+que el de alimentos, así que ordenar por fecha citaba el equivocado. Se prefiere
+el que no es de `EFSA FEEDAP`; los de piensos siguen en `oft_historial`, porque
+son parte de la historia del compuesto aunque no sean el dictamen que se cita.
 
 `hallazgo_genotoxico`, `hallazgo_mutagenico` y `hallazgo_carcinogenico` llevan
 prefijo para no confundirse con el trío de `clp`, que tiene los mismos nombres
@@ -139,6 +159,12 @@ y es otra cosa: clasificación legal del Anexo VI. **No son booleanos**: guardan
 el término literal de EFSA —`Positive`, `Negative`, `Ambiguous`, `No data`,
 `Not determined`— porque «negativo» y «nadie lo miró» no caben en un booleano
 sin perder justo lo que aportan.
+
+154 filas del fichero traen el término con un párrafo pegado detrás
+—«Not determined QSAR: no alerts foundConclusion:…»—. El término va siempre
+delante, así que se parte: la columna guarda sólo el término y el párrafo va a
+`hallazgo_<punto>_nota`. Sin partirlo, agrupar por esa columna daba 154
+categorías de una sola fila.
 
 Esa distinción es la que da `estudiado`: `true` si algún dictamen lo midió,
 `false` si los hay y ninguno lo midió, y **nulo si no hay ningún expediente**.
@@ -150,8 +176,11 @@ titanio tiene seis, negativos en 2004, 2016, 2018 y 2019 y positivo en 2021
 —y fue el de 2021, con datos de nanopartículas, el que llevó a retirarlo de la
 lista de la Unión—. La columna `hallazgo` trae el **más reciente que diga
 algo**, `dictamenes_discrepan` avisa de que los hay en desacuerdo,
-`hallazgos_previos` dice cuáles fueron, y `oft_historial` los trae todos con su
-fecha y su DOI. Quedarse con uno cualquiera de los seis da la conclusión
+`hallazgos_previos` dice cuáles fueron, y `oft_historial` trae **los demás** con
+su fecha y su DOI. Ojo al recuento: `dictamenes_total` los cuenta **todos,
+incluido el que se cita**, así que las filas de `oft_historial` son ese número
+menos uno. El dióxido de titanio tiene `dictamenes_total = 6` y 5 filas de
+historial. Quedarse con uno cualquiera de los seis da la conclusión
 contraria la mitad de las veces.
 
 Los DOI se publican desnudos —`10.2903/j.efsa.2023.8103`—, así que la URL es
