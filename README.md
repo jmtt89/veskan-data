@@ -23,6 +23,9 @@ no son las mismas.
 | `exposicion` | 260 | riesgo de sobreexposición de EFSA y grupos afectados |
 | `familias` · `familia_miembros` | 45 · 130 | grupos de aditivos y sus miembros |
 | `motivos_retirada` | 6 | por qué se retiró cada aditivo de la lista de la Unión |
+| `gravedad_origen` | 52 | de qué registro exacto sale cada veredicto de gravedad |
+| `niveles` | 8 | la escala completa, con cuáles están vacíos |
+| `certezas` | 4 | qué significa cada certeza, y en qué eje va |
 
 Y `aditivos.sqlite3`, que es el corte resuelto por número E que consume la
 aplicación. Si vas a analizar, usa el Parquet; el SQLite no lleva la evidencia.
@@ -53,10 +56,18 @@ pie de un Parquet trae el esquema y los desplazamientos de cada columna.
 `raw.githubusercontent.com` responde `206` y manda `access-control-allow-origin: *`,
 así que funciona desde un navegador.
 
-Un aviso si lo haces: `Range` sólo está en la lista blanca de CORS **con inicio
-explícito**. Un rango sufijo (`bytes=-8`), que es lo primero que pediría un
-lector de Parquet, dispara un *preflight* y GitHub responde `403`. Hay que sacar
-el tamaño con `HEAD` y pedir después rangos explícitos.
+Dos avisos si lo haces, los dos comprobados contra GitHub:
+
+**`Range` sólo está en la lista blanca de CORS con inicio explícito.** Un rango
+sufijo (`bytes=-8`), que es lo primero que pediría un lector de Parquet para
+leer el pie, dispara un *preflight* y GitHub responde `403`. Hay que sacar el
+tamaño con `HEAD` y pedir después rangos explícitos.
+
+**No puedes leer `Content-Range` ni `Accept-Ranges` desde otro origen.** GitHub
+no manda `Access-Control-Expose-Headers`, así que el navegador te oculta todo
+salvo las siete cabeceras seguras de CORS. `Content-Length` sí se lee, porque es
+una de ellas. Consecuencia práctica: el lector no puede verificar qué rango le
+han devuelto — tiene que llevar él la cuenta de lo que pidió.
 
 No se sirve desde GitHub Pages porque comprime las respuestas y eso rompe las
 peticiones por rango.
@@ -69,14 +80,33 @@ borra de un listado. En seis de las nueve retiradas que hay aquí el motivo no
 es la sustancia: es que nadie pagó su reevaluación o que dejó de venderse. La
 columna `verbo` guarda la frase literal de la norma para que puedas juzgarlo tú.
 
-**Ausente de una lista positiva tampoco es una prohibición.** En `legal_ue`,
-`autorizado = false` puede significar que se retiró (`retirado = true`) o que
-nunca estuvo. No son lo mismo.
+**Ausente de una lista positiva tampoco es una prohibición.** La columna
+`estado` de `legal_ue` resuelve los cuatro casos sin que haya que combinar
+booleanos: `autorizado`, `retirado`, `listado-sin-uso` y `ausente`.
+
+`listado-sin-uso` es el que más engaña: el E171 y el E161g **siguen en la parte
+B** del reglamento porque colorean medicamentos, pero no tienen ningún uso
+alimentario. Ahí `retirado` es `false` y leerlo solo llevaría a la conclusión
+contraria.
 
 **`nivel` ordena por naturaleza del daño, no por dosis** — 1 es genotóxico o
-carcinogénico, 8 es local o digestivo. La potencia va aparte, en `ida` y
-`posicion_en_nivel`. Y `certeza` dice cuánto se sabe, que es otra cosa que el
-nivel: «posiblemente cancerígeno» no es ausencia de datos.
+carcinogénico, 8 es local o digestivo. La escala tiene ocho peldaños y sólo seis
+están poblados: la tabla `niveles` trae los ocho con una columna `poblado`, para
+que se pueda distinguir «vacío» de «no existe». La potencia va aparte, en `ida`
+y `posicion_en_nivel`, **y ahí el 0 es el más potente y el 1 el menos**.
+
+**`certeza` no es una sola escala, son dos.** `confirmada`, `probable` y
+`posible` miden cuánto se sabe de una sospecha de cáncer y salen de IARC o del
+CLP; ésas sí se ordenan entre sí. `establecida` significa otra cosa: que el
+efecto está **medido**, porque es el que fijó la ingesta diaria admisible.
+Ponerlas en una única escala es un error de categoría. La tabla `certezas` trae
+el eje y el rango de cada una.
+
+**De dónde sale cada veredicto**: `gravedad_origen` da el registro exacto —el
+uuid de OpenFoodTox, el nombre de la fila de IARC o el CAS del Anexo VI—. No se
+puede reconstruir cruzando CAS: los nitratos y nitritos (E249–E252) los clasificó
+IARC por la *condición de exposición*, no por la sal, así que ningún CAS casa.
+Esos cuatro llevan `via_enlace = manual`.
 
 **Un número E puede estar reclamado por varias sustancias.** Hay 135 casos, casi
 siempre porque una familia y sus miembros comparten identificador. Por eso
