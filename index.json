@@ -1,5 +1,5 @@
 {
-  "generado": "2026-09-21T01:51:53.616Z",
+  "generado": "2026-09-21T05:27:28.774Z",
   "descripcion": "Base de peligro de aditivos alimentarios. Prohibicion y retirada son cosas distintas: ver la columna tipo de prohibiciones, y estado en legal_ue.",
   "base": "https://raw.githubusercontent.com/jmtt89/veskan-data/aditivos/",
   "formato": "parquet",
@@ -47,8 +47,8 @@
     "gravedad": {
       "nombre": "gravedad",
       "fichero": "gravedad.parquet",
-      "bytes": 2883,
-      "filas": 52,
+      "bytes": 2878,
+      "filas": 53,
       "columnas": [
         "wikidata",
         "nivel",
@@ -89,8 +89,8 @@
     "gravedad_origen": {
       "nombre": "gravedad_origen",
       "fichero": "gravedad_origen.parquet",
-      "bytes": 3083,
-      "filas": 52,
+      "bytes": 3078,
+      "filas": 53,
       "columnas": [
         "wikidata",
         "fuente",
@@ -147,8 +147,8 @@
     "iarc": {
       "nombre": "iarc",
       "fichero": "iarc.parquet",
-      "bytes": 31523,
-      "filas": 1040,
+      "bytes": 36230,
+      "filas": 1060,
       "columnas": [
         "nombre",
         "grupo",
@@ -156,7 +156,9 @@
         "cas",
         "volumen",
         "anio",
-        "anio_evaluacion"
+        "anio_evaluacion",
+        "comentario",
+        "en_preparacion"
       ]
     },
     "clp": {
@@ -261,8 +263,8 @@
       ]
     }
   },
-  "total_bytes": 574017,
-  "total_filas": 9207,
+  "total_bytes": 578714,
+  "total_filas": 9229,
   "sqlite": {
     "fichero": "aditivos.sqlite3",
     "bytes": 98304,
