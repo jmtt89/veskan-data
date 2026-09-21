@@ -1,5 +1,5 @@
 {
-  "generado": "2026-09-21T06:44:04.620Z",
+  "generado": "2026-09-21T06:54:31.658Z",
   "descripcion": "Base de peligro de aditivos alimentarios. Prohibicion y retirada son cosas distintas: ver la columna tipo de prohibiciones, y estado en legal_ue.",
   "base": "https://raw.githubusercontent.com/jmtt89/veskan-data/aditivos/",
   "formato": "parquet",
