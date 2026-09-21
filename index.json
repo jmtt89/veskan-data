@@ -1,5 +1,5 @@
 {
-  "generado": "2026-09-21T05:27:28.774Z",
+  "generado": "2026-09-21T06:44:04.620Z",
   "descripcion": "Base de peligro de aditivos alimentarios. Prohibicion y retirada son cosas distintas: ver la columna tipo de prohibiciones, y estado en legal_ue.",
   "base": "https://raw.githubusercontent.com/jmtt89/veskan-data/aditivos/",
   "formato": "parquet",
@@ -33,7 +33,7 @@
     "aditivo_tags": {
       "nombre": "aditivo_tags",
       "fichero": "aditivo_tags.parquet",
-      "bytes": 28308,
+      "bytes": 29232,
       "filas": 775,
       "columnas": [
         "wikidata",
@@ -41,7 +41,10 @@
         "numero_e",
         "nombre",
         "nombre_en",
-        "via"
+        "via",
+        "items",
+        "con_evidencia",
+        "declara_numero_e"
       ]
     },
     "gravedad": {
@@ -124,8 +127,8 @@
     "oft": {
       "nombre": "oft",
       "fichero": "oft.parquet",
-      "bytes": 340591,
-      "filas": 4387,
+      "bytes": 590213,
+      "filas": 5434,
       "columnas": [
         "uuid",
         "nombre",
@@ -141,13 +144,41 @@
         "critico_efecto",
         "critico_especie",
         "critico_dosis",
-        "critico_descriptor"
+        "critico_descriptor",
+        "hallazgo",
+        "estudiado",
+        "hallazgo_genotoxico",
+        "hallazgo_mutagenico",
+        "hallazgo_carcinogenico",
+        "hallazgo_fecha",
+        "hallazgo_dictamen",
+        "hallazgo_doi",
+        "ida_dictamen",
+        "sin_ida_motivo_dictamen",
+        "dictamenes_total",
+        "dictamenes_discrepan",
+        "hallazgos_previos"
+      ]
+    },
+    "oft_historial": {
+      "nombre": "oft_historial",
+      "fichero": "oft_historial.parquet",
+      "bytes": 155675,
+      "filas": 3760,
+      "columnas": [
+        "uuid",
+        "fecha",
+        "hallazgo",
+        "dictamen",
+        "doi",
+        "ida_dictamen",
+        "sin_ida_motivo_dictamen"
       ]
     },
     "iarc": {
       "nombre": "iarc",
       "fichero": "iarc.parquet",
-      "bytes": 36230,
+      "bytes": 36395,
       "filas": 1060,
       "columnas": [
         "nombre",
@@ -156,6 +187,7 @@
         "cas",
         "volumen",
         "anio",
+        "anio_nota",
         "anio_evaluacion",
         "comentario",
         "en_preparacion"
@@ -263,8 +295,8 @@
       ]
     }
   },
-  "total_bytes": 578714,
-  "total_filas": 9229,
+  "total_bytes": 985100,
+  "total_filas": 14036,
   "sqlite": {
     "fichero": "aditivos.sqlite3",
     "bytes": 98304,

@@ -13,9 +13,10 @@ no son las mismas.
 |---|---|---|
 | `aditivos` | 671 | la sustancia: nombre e identificadores (CAS, PubChem, DSSTox, ECHA, UNII) |
 | `aditivo_tags` | 775 | qué números E le corresponden a cada sustancia |
-| `gravedad` | 52 | nivel de peligro, certeza, y de dónde sale |
+| `gravedad` | 53 | nivel de peligro, certeza, y de dónde sale |
 | `prohibiciones` | 32 | prohibiciones y retiradas, una fila por jurisdicción |
-| `oft` | 4.387 | EFSA OpenFoodTox: IDA, efecto crítico, especie, dosis |
+| `oft` | 5.434 | EFSA OpenFoodTox: IDA, efecto crítico, especie, dosis, y los hallazgos de geno/carcinogenicidad de cada expediente |
+| `oft_historial` | 3.760 | qué concluyó cada dictamen anterior de EFSA, con su fecha |
 | `iarc` | 1.040 | clasificación de carcinogenicidad de la IARC |
 | `clp` | 1.365 | clasificaciones CMR del Anexo VI del Reglamento CLP |
 | `legal_ue` | 344 | estado en el Reglamento (CE) 1333/2008 |
@@ -23,7 +24,7 @@ no son las mismas.
 | `exposicion` | 260 | riesgo de sobreexposición de EFSA y grupos afectados |
 | `familias` · `familia_miembros` | 45 · 130 | grupos de aditivos y sus miembros |
 | `motivos_retirada` | 6 | por qué se retiró cada aditivo de la lista de la Unión |
-| `gravedad_origen` | 52 | de qué registro exacto sale cada veredicto de gravedad |
+| `gravedad_origen` | 53 | de qué registro exacto sale cada veredicto de gravedad |
 | `niveles` | 8 | la escala completa, con cuáles están vacíos |
 | `certezas` | 4 | qué significa cada certeza, y en qué eje va |
 
@@ -32,7 +33,7 @@ aplicación. Si vas a analizar, usa el Parquet; el SQLite no lleva la evidencia.
 
 ## Cómo consultarlo
 
-Lo más simple es bajarlo: el conjunto entero son unos **550 KB**. La cifra
+Lo más simple es bajarlo: el conjunto entero son unos **960 KB**. La cifra
 exacta, y la de cada tabla, están en `index.json` — que lo genera el mismo
 script que escribe los Parquet, así que no se queda viejo.
 
@@ -111,6 +112,52 @@ efecto está **medido**, porque es el que fijó la ingesta diaria admisible.
 Ponerlas en una única escala es un error de categoría. La tabla `certezas` trae
 el eje y el rango de cada una.
 
+**`hallazgo` no es la conclusión de EFSA**, y es la columna que más fácil se
+lee al revés. Resume lo que reportaron los **estudios** de cada expediente, no
+lo que dictaminó el panel. El índigo carmín (E132) sale `positivo` y ese mismo
+dictamen —[10.2903/j.efsa.2023.8103](https://doi.org/10.2903/j.efsa.2023.8103)—
+confirma su IDA de 5 mg/kg y concluye que *«no hay preocupación de seguridad»*.
+Por eso `hallazgo` **no alimenta `nivel`**.
+
+**Cómo se lee sin mentir: junto a `ida`.** Las dos columnas juntas dicen la
+frase entera, y las dos son hechos:
+
+| | `hallazgo` | `ida` | se lee |
+|---|---|---|---|
+| E132 | `positivo` | 5 mg/kg | los estudios reportaron algo y EFSA mantiene una ingesta admisible |
+| E171 | `positivo` | — | los estudios reportaron algo y EFSA no fija ninguna |
+
+Y eso no es deducción del lector: cuando EFSA tiene esa preocupación **la
+codifica**, `sin_ida_motivo = genotoxicidad`, y no asigna IDA. No hay una
+columna `conclusion` porque el fichero de EFSA no la trae; lo que trae es el
+valor de referencia que fijó cada dictamen —`ida_dictamen`, en 623 de las
+5.434— y el motivo codificado de no fijarlo.
+
+`hallazgo_genotoxico`, `hallazgo_mutagenico` y `hallazgo_carcinogenico` llevan
+prefijo para no confundirse con el trío de `clp`, que tiene los mismos nombres
+y es otra cosa: clasificación legal del Anexo VI. **No son booleanos**: guardan
+el término literal de EFSA —`Positive`, `Negative`, `Ambiguous`, `No data`,
+`Not determined`— porque «negativo» y «nadie lo miró» no caben en un booleano
+sin perder justo lo que aportan.
+
+Esa distinción es la que da `estudiado`: `true` si algún dictamen lo midió,
+`false` si los hay y ninguno lo midió, y **nulo si no hay ningún expediente**.
+Son tres estados distintos y conviene no colapsarlos.
+
+**Un aditivo tiene varios dictámenes y se contradicen.** No es un defecto del
+fichero: EFSA vuelve sobre el aditivo cuando hay datos nuevos. El dióxido de
+titanio tiene seis, negativos en 2004, 2016, 2018 y 2019 y positivo en 2021
+—y fue el de 2021, con datos de nanopartículas, el que llevó a retirarlo de la
+lista de la Unión—. La columna `hallazgo` trae el **más reciente que diga
+algo**, `dictamenes_discrepan` avisa de que los hay en desacuerdo,
+`hallazgos_previos` dice cuáles fueron, y `oft_historial` los trae todos con su
+fecha y su DOI. Quedarse con uno cualquiera de los seis da la conclusión
+contraria la mitad de las veces.
+
+Los DOI se publican desnudos —`10.2903/j.efsa.2023.8103`—, así que la URL es
+`https://doi.org/` más el valor. El fichero de EFSA los escribe de tres formas
+distintas, dos de ellas rotas; aquí ya vienen normalizados.
+
 **De dónde sale cada veredicto**: `gravedad_origen` da el registro exacto —el
 uuid de OpenFoodTox, el nombre de la fila de IARC o el CAS del Anexo VI—. No se
 puede reconstruir cruzando CAS: los nitratos y nitritos (E249–E252) los clasificó
@@ -120,6 +167,72 @@ Esos cuatro llevan `via_enlace = manual`.
 **Un número E puede estar reclamado por varias sustancias.** Hay 135 casos, casi
 siempre porque una familia y sus miembros comparten identificador. Por eso
 existe `aditivo_tags` en vez de una columna.
+
+En 49 de esos 135 unos ítems llevan evidencia y otros no, y en **cuatro** el
+que tiene los datos no es el que se encuentra primero. Dos columnas de
+`aditivo_tags` lo resuelven sin elegir por ti: `items` dice cuántos ítems
+reclaman el tag, y `con_evidencia` cuál de ellos lleva algo.
+
+**`con_evidencia` es ancho a propósito**: cierto si el ítem tiene nivel de
+gravedad **o** clasificación de IARC **o** del CLP **o** un valor de
+OpenFoodTox. Sirve para desempatar «cuál responde más». Si lo que vas a
+afirmar es que existe una *evaluación de peligro*, no uses esta columna:
+cruza con `gravedad`, que es literal. Las dos condiciones no dan lo mismo, y
+las dos son correctas para lo suyo.
+
+**Y la hermana no siempre es la misma sustancia.** Para eso está
+`declara_numero_e`, que dice si Wikidata confirma ese número E para ese ítem
+por su propiedad P628:
+
+| tag | ficha vacía | ficha con `gravedad` | `declara_numero_e` | qué es |
+|---|---|---|---|---|
+| E553b | `Q134583` especie mineral | `Q108584660` compuesto químico | sí | la misma sustancia, dos modelados |
+| E523 | `Q419370` sulfato anhidro | `Q27261814` dodecahidrato | sí | la misma sustancia, dos hidratos |
+| E407a | `Q288867` *Eucheuma*, un género de algas | `Q421991` carragenano, que declara **E407** | **no** | otra sustancia |
+| E924b | `Q416861` bromato de **calcio** | `Q409241` bromato de **potasio** | **no** | otra sustancia |
+
+En los dos últimos es Open Food Facts quien apunta ese número E a la otra
+sustancia. Decir «una ficha hermana tiene la evaluación» es cierto arriba y
+engañoso abajo, y esa columna es la que lo separa.
+
+`declara_numero_e = false` **no significa enlace erróneo**, y son 198 de 770:
+el etanol no declara E1510 en Wikidata y el enlace de Open Food Facts es
+correcto. Significa que Wikidata no lo confirma, y eso sólo pesa cuando
+`items` es mayor que uno y hay que decidir de cuál se está hablando.
+
+**Cuidado con el grano de las columnas: unas son por tag y otras por ítem.**
+`aditivo_tags` tiene una fila por pareja (tag, ítem), y no todas sus columnas
+varían igual. `nombre` y `nombre_en` vienen de Open Food Facts y son **del
+tag**: si dos ítems comparten tag, los dos traen el mismo nombre. `items`,
+`con_evidencia` y `declara_numero_e` sí son **del ítem**.
+
+Eso convierte el consejo fácil en una trampa. Para el 96% de los tags, que
+tienen un solo ítem, `aditivo_tags.nombre` es el mejor nombre que hay: cubre
+183 sustancias que no tienen etiqueta en español en Wikidata y evita los 4
+casos en que Wikidata devuelve el número E como nombre —en el E952 dice
+literalmente «E952» donde Open Food Facts dice «Ciclamato»—. Pero en los 135
+tags compartidos **te da el mismo nombre para las dos fichas**, que es justo
+donde hacía falta distinguirlas.
+
+La regla que funciona:
+
+```sql
+CASE WHEN t.items > 1
+     THEN coalesce(a.nombre_es, a.nombre_en, t.nombre)   -- del ítem
+     ELSE coalesce(t.nombre, a.nombre_es, a.nombre_en)   -- del tag
+END
+```
+
+El precio es que E523 y E553b salen en inglés, porque ninguna de sus dos
+entidades tiene etiqueta española en Wikidata. No hay de dónde sacarla: de los
+186 ítems sin `nombre_es`, 185 no tienen ni `aliases.es` ni artículo en la
+Wikipedia española, y el único que sí devuelve «E 1451». La salida honesta es
+mostrar el inglés y poner el nombre español del tag debajo como alternativo.
+
+**`iarc.anio` va partido en dos.** IARC escribe 72 de las 1.060 filas como
+«2025 online» —la monografía publicada en línea antes que el volumen impreso—,
+así que la columna no cabía en un entero. En vez de volverla texto, que rompe a
+quien ordena por ella, `anio` es `INT32` y `anio_nota` guarda el matiz.
 
 ## Fuentes y licencias
 
