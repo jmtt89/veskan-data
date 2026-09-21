@@ -32,7 +32,9 @@ aplicación. Si vas a analizar, usa el Parquet; el SQLite no lleva la evidencia.
 
 ## Cómo consultarlo
 
-Lo más simple es bajarlo: el conjunto entero son **676 KB**.
+Lo más simple es bajarlo: el conjunto entero son unos **550 KB**. La cifra
+exacta, y la de cada tabla, están en `index.json` — que lo genera el mismo
+script que escribe los Parquet, así que no se queda viejo.
 
 ```python
 import pandas as pd
@@ -84,10 +86,17 @@ columna `verbo` guarda la frase literal de la norma para que puedas juzgarlo tú
 `estado` de `legal_ue` resuelve los cuatro casos sin que haya que combinar
 booleanos: `autorizado`, `retirado`, `listado-sin-uso` y `ausente`.
 
-`listado-sin-uso` es el que más engaña: el E171 y el E161g **siguen en la parte
-B** del reglamento porque colorean medicamentos, pero no tienen ningún uso
-alimentario. Ahí `retirado` es `false` y leerlo solo llevaría a la conclusión
-contraria.
+`listado-sin-uso` es el que más engaña: el **E161g**, el E456 y el E463a siguen
+en la parte B del reglamento pero no tienen ningún uso alimentario. Ahí
+`retirado` es `false` —porque ningún acto los sacó: simplemente no se
+trasladaron a la lista de la Unión— y leer sólo ese campo llevaría a la
+conclusión contraria.
+
+No confundas ese caso con el **E171**, que es `retirado`: a él **sí** lo sacó un
+acto concreto, el Reglamento 2022/63. Que además siga en la parte B porque
+colorea medicamentos no lo convierte en `listado-sin-uso`; para eso está la
+columna `listado_parte_b`, que puede ser `true` en los dos casos. Son dos hechos
+ortogonales y hay una columna para cada uno.
 
 **`nivel` ordena por naturaleza del daño, no por dosis** — 1 es genotóxico o
 carcinogénico, 8 es local o digestivo. La escala tiene ocho peldaños y sólo seis

@@ -1,6 +1,6 @@
 {
-  "generado": "2026-09-20T20:46:40.204Z",
-  "descripcion": "Base de peligro de aditivos alimentarios. Prohibicion y retirada son cosas distintas: ver la columna tipo.",
+  "generado": "2026-09-21T01:51:53.616Z",
+  "descripcion": "Base de peligro de aditivos alimentarios. Prohibicion y retirada son cosas distintas: ver la columna tipo de prohibiciones, y estado en legal_ue.",
   "base": "https://raw.githubusercontent.com/jmtt89/veskan-data/aditivos/",
   "formato": "parquet",
   "licencias": {
@@ -12,20 +12,8 @@
     "iarc": "atribucion"
   },
   "tablas": {
-    "aditivo_tags": {
-      "fichero": "aditivo_tags.parquet",
-      "bytes": 28308,
-      "filas": 775,
-      "columnas": [
-        "wikidata",
-        "tag",
-        "numero_e",
-        "nombre",
-        "nombre_en",
-        "via"
-      ]
-    },
     "aditivos": {
+      "nombre": "aditivos",
       "fichero": "aditivos.parquet",
       "bytes": 50838,
       "filas": 671,
@@ -42,61 +30,22 @@
         "unii"
       ]
     },
-    "clp": {
-      "fichero": "clp.parquet",
-      "bytes": 81341,
-      "filas": 1365,
+    "aditivo_tags": {
+      "nombre": "aditivo_tags",
+      "fichero": "aditivo_tags.parquet",
+      "bytes": 28308,
+      "filas": 775,
       "columnas": [
-        "cas",
-        "nombre",
-        "codigos",
-        "peor",
-        "cancerigeno",
-        "mutagenico",
-        "repro"
-      ]
-    },
-    "exposicion": {
-      "fichero": "exposicion.parquet",
-      "bytes": 11516,
-      "filas": 260,
-      "columnas": [
+        "wikidata",
         "tag",
         "numero_e",
-        "riesgo",
-        "supera_media",
-        "supera_p95",
-        "vulnerables",
-        "anses",
-        "dictamen_titulo",
-        "dictamen_fecha",
-        "dictamen_url"
-      ]
-    },
-    "familia_miembros": {
-      "fichero": "familia_miembros.parquet",
-      "bytes": 4013,
-      "filas": 130,
-      "columnas": [
-        "familia",
-        "tag",
         "nombre",
-        "wikidata"
-      ]
-    },
-    "familias": {
-      "fichero": "familias.parquet",
-      "bytes": 2130,
-      "filas": 45,
-      "columnas": [
-        "tag",
-        "nombre",
-        "wikidata",
-        "hereda_de",
-        "revisar"
+        "nombre_en",
+        "via"
       ]
     },
     "gravedad": {
+      "nombre": "gravedad",
       "fichero": "gravedad.parquet",
       "bytes": 2883,
       "filas": 52,
@@ -113,82 +62,45 @@
         "solo_una_fuente"
       ]
     },
-    "iarc": {
-      "fichero": "iarc.parquet",
-      "bytes": 31523,
-      "filas": 1040,
+    "niveles": {
+      "nombre": "niveles",
+      "fichero": "niveles.parquet",
+      "bytes": 1237,
+      "filas": 8,
       "columnas": [
-        "nombre",
-        "grupo",
-        "significado",
-        "cas",
-        "volumen",
-        "anio",
-        "anio_evaluacion"
+        "nivel",
+        "etiqueta",
+        "descripcion",
+        "poblado"
       ]
     },
-    "legal_eeuu": {
-      "fichero": "legal_eeuu.parquet",
-      "bytes": 1697,
-      "filas": 36,
+    "certezas": {
+      "nombre": "certezas",
+      "fichero": "certezas.parquet",
+      "bytes": 934,
+      "filas": 4,
       "columnas": [
-        "seccion",
-        "nombre",
-        "parte",
-        "alimentos",
-        "motivo"
+        "certeza",
+        "eje",
+        "rango",
+        "descripcion"
       ]
     },
-    "legal_ue": {
-      "fichero": "legal_ue.parquet",
-      "bytes": 6754,
-      "filas": 344,
+    "gravedad_origen": {
+      "nombre": "gravedad_origen",
+      "fichero": "gravedad_origen.parquet",
+      "bytes": 3083,
+      "filas": 52,
       "columnas": [
-        "numero_e",
-        "nombre_reglamento",
-        "autorizado",
-        "via",
-        "listado_parte_b",
-        "retirado",
-        "caducado_el",
-        "celex"
-      ]
-    },
-    "motivos_retirada": {
-      "fichero": "motivos_retirada.parquet",
-      "bytes": 977,
-      "filas": 6,
-      "columnas": [
-        "numero_e",
-        "nombre",
-        "jurisdiccion",
-        "celex",
-        "motivo"
-      ]
-    },
-    "oft": {
-      "fichero": "oft.parquet",
-      "bytes": 340882,
-      "filas": 4387,
-      "columnas": [
-        "uuid",
-        "nombre",
-        "cas",
-        "param_code",
-        "ida",
-        "ida_unidad",
-        "sin_ida",
-        "sin_ida_motivo",
-        "sin_dosis_motivo",
-        "incertidumbre",
-        "critico_toxicidad",
-        "critico_efecto",
-        "critico_especie",
-        "critico_dosis",
-        "critico_descriptor"
+        "wikidata",
+        "fuente",
+        "clave_origen",
+        "detalle",
+        "via_enlace"
       ]
     },
     "prohibiciones": {
+      "nombre": "prohibiciones",
       "fichero": "prohibiciones.parquet",
       "bytes": 5981,
       "filas": 32,
@@ -208,11 +120,152 @@
         "base_legal",
         "principal"
       ]
+    },
+    "oft": {
+      "nombre": "oft",
+      "fichero": "oft.parquet",
+      "bytes": 340591,
+      "filas": 4387,
+      "columnas": [
+        "uuid",
+        "nombre",
+        "cas",
+        "param_code",
+        "ida",
+        "ida_unidad",
+        "sin_ida",
+        "sin_ida_motivo",
+        "sin_dosis_motivo",
+        "incertidumbre",
+        "critico_toxicidad",
+        "critico_efecto",
+        "critico_especie",
+        "critico_dosis",
+        "critico_descriptor"
+      ]
+    },
+    "iarc": {
+      "nombre": "iarc",
+      "fichero": "iarc.parquet",
+      "bytes": 31523,
+      "filas": 1040,
+      "columnas": [
+        "nombre",
+        "grupo",
+        "significado",
+        "cas",
+        "volumen",
+        "anio",
+        "anio_evaluacion"
+      ]
+    },
+    "clp": {
+      "nombre": "clp",
+      "fichero": "clp.parquet",
+      "bytes": 81341,
+      "filas": 1365,
+      "columnas": [
+        "cas",
+        "nombre",
+        "codigos",
+        "peor",
+        "cancerigeno",
+        "mutagenico",
+        "repro"
+      ]
+    },
+    "legal_ue": {
+      "nombre": "legal_ue",
+      "fichero": "legal_ue.parquet",
+      "bytes": 6974,
+      "filas": 344,
+      "columnas": [
+        "numero_e",
+        "nombre_reglamento",
+        "autorizado",
+        "via",
+        "listado_parte_b",
+        "retirado",
+        "caducado_el",
+        "estado",
+        "celex"
+      ]
+    },
+    "legal_eeuu": {
+      "nombre": "legal_eeuu",
+      "fichero": "legal_eeuu.parquet",
+      "bytes": 1695,
+      "filas": 36,
+      "columnas": [
+        "seccion",
+        "nombre",
+        "parte",
+        "alimentos",
+        "motivo"
+      ]
+    },
+    "exposicion": {
+      "nombre": "exposicion",
+      "fichero": "exposicion.parquet",
+      "bytes": 11509,
+      "filas": 260,
+      "columnas": [
+        "tag",
+        "numero_e",
+        "riesgo",
+        "supera_media",
+        "supera_p95",
+        "vulnerables",
+        "anses",
+        "dictamen_titulo",
+        "dictamen_fecha",
+        "dictamen_url"
+      ]
+    },
+    "familias": {
+      "nombre": "familias",
+      "fichero": "familias.parquet",
+      "bytes": 2130,
+      "filas": 45,
+      "columnas": [
+        "tag",
+        "nombre",
+        "wikidata",
+        "hereda_de",
+        "revisar"
+      ]
+    },
+    "familia_miembros": {
+      "nombre": "familia_miembros",
+      "fichero": "familia_miembros.parquet",
+      "bytes": 4013,
+      "filas": 130,
+      "columnas": [
+        "familia",
+        "tag",
+        "nombre",
+        "wikidata"
+      ]
+    },
+    "motivos_retirada": {
+      "nombre": "motivos_retirada",
+      "fichero": "motivos_retirada.parquet",
+      "bytes": 977,
+      "filas": 6,
+      "columnas": [
+        "numero_e",
+        "nombre",
+        "jurisdiccion",
+        "celex",
+        "motivo"
+      ]
     }
   },
+  "total_bytes": 574017,
+  "total_filas": 9207,
   "sqlite": {
     "fichero": "aditivos.sqlite3",
-    "bytes": 94208,
+    "bytes": 98304,
     "nota": "corte resuelto por numero E que consume la aplicacion; sin la evidencia"
   }
 }
