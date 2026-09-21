@@ -16,7 +16,7 @@ no son las mismas.
 | `gravedad` | 53 | nivel de peligro, certeza, y de dónde sale |
 | `prohibiciones` | 32 | prohibiciones y retiradas, una fila por jurisdicción |
 | `oft` | 5.434 | EFSA OpenFoodTox: IDA, efecto crítico, especie, dosis, los hallazgos de geno/carcinogenicidad y **la conclusión del panel** |
-| `oft_historial` | 3.763 | qué dijo cada dictamen anterior de EFSA, con su fecha, su DOI y su panel |
+| `oft_historial` | 9.187 | qué dijo **cada** dictamen de EFSA, con su fecha, su DOI y su panel |
 | `iarc` | 1.040 | clasificación de carcinogenicidad de la IARC |
 | `clp` | 1.365 | clasificaciones CMR del Anexo VI del Reglamento CLP |
 | `legal_ue` | 344 | estado en el Reglamento (CE) 1333/2008 |
@@ -33,7 +33,7 @@ aplicación. Si vas a analizar, usa el Parquet; el SQLite no lleva la evidencia.
 
 ## Cómo consultarlo
 
-Lo más simple es bajarlo: el conjunto entero son unos **1,23 MB**. La cifra
+Lo más simple es bajarlo: el conjunto entero son unos **1,48 MB**. La cifra
 exacta, y la de cada tabla, están en `index.json` — que lo genera el mismo
 script que escribe los Parquet, así que no se queda viejo.
 
@@ -54,7 +54,19 @@ LEFT JOIN 'prohibiciones.parquet' p ON p.tag = t.tag
 ORDER BY g.nivel;
 ```
 
-También se puede leer **por rangos HTTP**, sin descargar el fichero entero: el
+**Merece la pena bajarlo entero.** Medido sobre este conjunto, con cinco
+repeticiones sin caché: leer por rangos mueve entre una cuarta parte y un
+dieciseisavo de los bytes y tarda entre dos y siete veces más. Mandan los
+viajes, no los bytes, mientras el fichero quepa en una descarga.
+
+| | bytes | peticiones | mediana |
+|---|---|---|---|
+| `oft` entero | 754.116 B | 1 | 98 ms |
+| `oft`, 9 de 35 columnas | 190.142 B · 25,2 % | 7 | 259 ms · 2,65× |
+| `oft`, 2 de 35 columnas | 6,1 % | 7 | 3,09× |
+| `oft_historial`, 4 de 11 | 38,8 % | 7 | 6,95× |
+
+Aun así se puede leer **por rangos HTTP**, sin descargar el fichero entero: el
 pie de un Parquet trae el esquema y los desplazamientos de cada columna.
 `raw.githubusercontent.com` responde `206` y manda `access-control-allow-origin: *`,
 así que funciona desde un navegador.
@@ -140,8 +152,20 @@ hechos y juntas dicen la frase entera:
 | E171 | `positivo` | `alguna-preocupacion` | — | los estudios reportaron algo y el panel concluyó que hay preocupación |
 | E132 | `positivo` | — | 5 mg/kg | los estudios reportaron algo y EFSA mantiene una ingesta admisible |
 
-Cuidado con dar la vuelta a esa regla: **la ausencia de IDA no significa por sí
-sola que haya preocupación.** El E171 no trae `sin_ida_motivo`; lo que trae es
+**Y el par funciona en las dos direcciones**, que es la prueba de que ninguna
+de las dos columnas se lee sin la otra. El dióxido de titanio lo demuestra por
+el otro lado: su dictamen de 2018 trae `hallazgo = negativo` **y**
+`evaluacion = alguna-preocupacion`. No es un cruce mal hecho — el texto dice
+que los estudios no daban para justificar un nuevo estudio de carcinogenicidad
+y que aun así el panel concluyó que había motivo de preocupación.
+
+| | `hallazgo` | `evaluacion` | |
+|---|---|---|---|
+| E132, 2023 | positivo | — (IDA de 5 mg/kg) | el hallazgo no implica veredicto |
+| E171, 2018 | negativo | `alguna-preocupacion` | el veredicto no sigue al hallazgo |
+
+Cuidado con dar la vuelta a la regla de la IDA: **su ausencia no significa por
+sí sola que haya preocupación.** El E171 no trae `sin_ida_motivo`; lo que trae es
 `sin_dosis_motivo = margen-de-seguridad`, que describe cómo se expresó el valor
 de referencia y aparece también en dictámenes que concluyeron que era
 aceptable. Para afirmar preocupación, usa `evaluacion`.
@@ -176,11 +200,27 @@ titanio tiene seis, negativos en 2004, 2016, 2018 y 2019 y positivo en 2021
 —y fue el de 2021, con datos de nanopartículas, el que llevó a retirarlo de la
 lista de la Unión—. La columna `hallazgo` trae el **más reciente que diga
 algo**, `dictamenes_discrepan` avisa de que los hay en desacuerdo,
-`hallazgos_previos` dice cuáles fueron, y `oft_historial` trae **los demás** con
-su fecha y su DOI. Ojo al recuento: `dictamenes_total` los cuenta **todos,
-incluido el que se cita**, así que las filas de `oft_historial` son ese número
-menos uno. El dióxido de titanio tiene `dictamenes_total = 6` y 5 filas de
-historial. Quedarse con uno cualquiera de los seis da la conclusión
+`hallazgos_previos` dice cuáles fueron, y `oft_historial` los trae **todos,
+incluido el que se cita**, marcado con `citado`. Así la consulta natural —las
+filas de una sustancia ordenadas por fecha— sale completa:
+
+```sql
+SELECT fecha, hallazgo, evaluacion, citado, panel, dictamen
+FROM 'oft_historial.parquet' WHERE uuid = ? ORDER BY fecha;
+```
+
+```
+2004-12-08  negativo  sin-preocupacion
+2016-06-28  negativo  —
+2018-06-26  negativo  alguna-preocupacion
+2019-06-27  negativo  —
+2021-03-25  positivo  alguna-preocupacion   ← citado, y el que lo sacó de la lista
+2021-05-05  positivo  alguna-preocupacion     [EFSA FEEDAP — piensos]
+```
+
+En la fila citada, `evaluacion_texto` va vacío a propósito: ese texto está en
+`oft`. En las demás se conserva, porque ahí es el único sitio donde comprobar
+la etiqueta. Quedarse con uno cualquiera de los seis da la conclusión
 contraria la mitad de las veces.
 
 Los DOI se publican desnudos —`10.2903/j.efsa.2023.8103`—, así que la URL es

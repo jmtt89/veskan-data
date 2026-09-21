@@ -1,5 +1,5 @@
 {
-  "generado": "2026-09-21T07:04:49.477Z",
+  "generado": "2026-09-21T07:14:48.695Z",
   "descripcion": "Base de peligro de aditivos alimentarios. Prohibicion y retirada son cosas distintas: ver la columna tipo de prohibiciones, y estado en legal_ue.",
   "base": "https://raw.githubusercontent.com/jmtt89/veskan-data/aditivos/",
   "formato": "parquet",
@@ -127,7 +127,7 @@
     "oft": {
       "nombre": "oft",
       "fichero": "oft.parquet",
-      "bytes": 754116,
+      "bytes": 753695,
       "filas": 5434,
       "columnas": [
         "uuid",
@@ -170,8 +170,8 @@
     "oft_historial": {
       "nombre": "oft_historial",
       "fichero": "oft_historial.parquet",
-      "bytes": 240265,
-      "filas": 3763,
+      "bytes": 483700,
+      "filas": 9187,
       "columnas": [
         "uuid",
         "fecha",
@@ -183,7 +183,8 @@
         "evaluacion",
         "evaluacion_texto",
         "panel",
-        "dominio"
+        "dominio",
+        "citado"
       ]
     },
     "iarc": {
@@ -306,8 +307,8 @@
       ]
     }
   },
-  "total_bytes": 1233593,
-  "total_filas": 14039,
+  "total_bytes": 1476607,
+  "total_filas": 19463,
   "sqlite": {
     "fichero": "aditivos.sqlite3",
     "bytes": 98304,
